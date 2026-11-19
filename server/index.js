@@ -59,7 +59,9 @@ function loadToken() {
   return t;
 }
 const TOKEN = loadToken();
+const OPEN_ACCESS = process.env.TM_NO_TOKEN === '1'; // demos and trusted networks only
 const tokenOk = (given) => {
+  if (OPEN_ACCESS) return true;
   const a = Buffer.from(String(given || ''));
   const b = Buffer.from(TOKEN);
   return a.length === b.length && timingSafeEqual(a, b);
@@ -161,6 +163,7 @@ async function main() {
   console.log(`\n  Videos folder: ${MEDIA_DIR}  (${media.list().length} clips)`);
   if (!media.ffmpeg) console.log('  ! ffmpeg was not found: no thumbnails, and no smooth scrubbing/reverse.');
   if (!lanIps().length) console.log('  ! No network found: connect the laptop to Wi-Fi or a phone hotspot.');
+  if (OPEN_ACCESS) console.log('  ! TM_NO_TOKEN is set: anyone on this network can use the controls.');
   console.log('\n  Scan this with the phone (same Wi-Fi as the laptop):\n');
   console.log(await QRCode.toString(u.remote, { type: 'terminal', small: true }));
 

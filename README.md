@@ -74,7 +74,7 @@ Any phone can open the same link and use *Plain camera* to act as a roving camer
 - `shared/` state model and effect list, used by both server and browsers.
 - `public/stage/` the WebGL2 output. `public/remote/` the phone UI. `public/kaleido/` the kaleidoscope.
 - No build step. `data/` holds the saved state, session token, certificate and cache; delete it to start fresh.
-- Settings by environment variable: `TM_PORT` (8080), `TM_HTTPS_PORT` (8443), `TM_MEDIA`, `TM_DATA`, `TM_FFMPEG`.
+- Settings by environment variable: `TM_PORT` (8080), `TM_HTTPS_PORT` (8443), `TM_MEDIA`, `TM_DATA`, `TM_FFMPEG`. `TM_NO_TOKEN=1` turns the session token off (demos and trusted networks only).
 - `npm test` runs the unit tests. `npm run e2e` drives the real pages in headless Chromium (needs Playwright and ffmpeg).
 
 The remote link carries a session token; devices without it cannot connect to the controls. Thumbnails and video files are served without it to anyone on the same network.
