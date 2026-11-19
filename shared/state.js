@@ -213,6 +213,13 @@ export function reduce(state, a) {
       }
       return true;
     }
+    case 'restart': {
+      const ly = state.layers[a.layer];
+      if (!ly) return false;
+      ly.seq++;
+      ly.playing = true;
+      return true;
+    }
     case 'retrigger': {
       for (const id of LAYERS) {
         state.layers[id].seq++;

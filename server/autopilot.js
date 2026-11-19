@@ -49,7 +49,7 @@ export class Autopilot {
       if (/^(fx|mom)\./.test(a.path)) return 'fx';
       return null;
     }
-    if (a.type === 'load' || a.type === 'eject') return a.layer === 'A' || a.layer === 'B' ? 'decks' : 'overlay';
+    if (a.type === 'load' || a.type === 'eject' || a.type === 'restart') return a.layer === 'A' || a.layer === 'B' ? 'decks' : 'overlay';
     if (a.type === 'go' || a.type === 'retrigger' || a.type === 'scene.load') return 'decks';
     return null;
   }
