@@ -14,8 +14,8 @@ canvas.height = 720;
 
 // ---------- picture parameters ----------
 
-const MODES = [['wedge', 'Classic'], ['quad', 'Mirror ×4'], ['hex', 'Honeycomb'], ['tunnel', 'Tunnel'], ['off', 'Plain camera']];
-const MODE_CODE = { off: 0, wedge: 1, quad: 2, hex: 3, tunnel: 4 }; // matches the shader
+const MODES = [['wedge', 'Classic'], ['quad', 'Mirror ×4'], ['hex', 'Honeycomb'], ['tunnel', 'Tunnel'], ['circles', 'Circles'], ['spiral', 'Spiral'], ['off', 'Plain camera']];
+const MODE_CODE = { off: 0, wedge: 1, quad: 2, hex: 3, tunnel: 4, circles: 5, spiral: 6 }; // matches the shader
 const DEFAULTS = { mode: 'wedge', seg: 8, spin: 0.15, twist: 0, zoom: 1, offX: 0, offY: 0, hue: 0, sat: 1.2, trails: 0, invert: false, beat: false };
 const P = { ...DEFAULTS };
 let rot = 0;
@@ -65,12 +65,31 @@ void main() {
       vec2 a = mod(p, s) - s * 0.5;
       vec2 b = mod(p - s * 0.5, s) - s * 0.5;
       p = wedge(dot(a, a) < dot(b, b) ? a : b, 6.0) * 1.4;
-    } else {
+    } else if (uMode < 4.5) {
       float r = max(length(p), 0.02);
       float a = atan(p.y, p.x) / PI;
       // a whole number of mirrored repeats round the circle, so there is no seam
       p = vec2(a * floor(uSeg * 0.5 + 0.5), 0.25 / r + uTime * 0.15) - 0.5;
       fog = smoothstep(0.03, 0.3, r); // far end of the tunnel fades to dark
+    } else if (uMode < 5.5) {
+      // circles: classic mirrors, then mirrored again ring after ring outwards.
+      // Rings have a fixed size here, so zooming changes how many fit on screen.
+      const float w = 0.22;
+      p = wedge(p, uSeg);
+      float r = length(p);
+      float t = abs(mod(r, 2.0 * w) - w);
+      p = (r > 1e-5 ? p / r : vec2(1.0, 0.0)) * (w - t) * (0.45 / w);
+    } else {
+      // spiral: mirrored arms on a double spiral that repeats smaller and smaller inwards
+      float r = max(length(p), 1e-4);
+      float lr = log(r);
+      float th = atan(p.y, p.x);
+      float seg = 2.0 * PI / uSeg;
+      float a = abs(mod(th + lr * 1.5, seg) - seg * 0.5);
+      // bands follow the spiral; one full turn shifts by two whole bands, so there is no seam
+      float t = abs(mod(lr - th / PI, 1.0) - 0.5);
+      p = 0.12 * exp(t * 2.64) * vec2(cos(a), sin(a));
+      fog = smoothstep(0.0, 0.07, r); // the centre gets too fine to draw: fade it out
     }
   }
   // fit the source to cover the frame, then move the sampling point
@@ -349,7 +368,7 @@ $('sliders').append(...Object.values(sliders).map((s) => s.el));
 function randomize() {
   const r = Math.random;
   Object.assign(P, {
-    mode: ['wedge', 'wedge', 'quad', 'hex', 'tunnel'][Math.floor(r() * 5)],
+    mode: ['wedge', 'wedge', 'quad', 'hex', 'tunnel', 'circles', 'spiral'][Math.floor(r() * 7)],
     seg: 4 + Math.floor(r() * 9) * 2,
     spin: (r() - 0.5) * 0.8,
     twist: r() < 0.5 ? 0 : (r() - 0.5) * 0.8,
@@ -416,7 +435,7 @@ $('buttons').append(randomBtn, freezeBtn, invertBtn, beatBtn, flipBtn, camBtn, f
 function syncControls() {
   MODES.forEach(([id], i) => modeButtons[i].classList.toggle('on', P.mode === id));
   for (const [k, s] of Object.entries(sliders)) s.set(P[k]);
-  sliders.seg.setLabel(`Mirrors: ${Math.round(P.seg)}`);
+  sliders.seg.setLabel(P.mode === 'spiral' ? `Arms: ${Math.round(P.seg / 2)}` : `Mirrors: ${Math.round(P.seg)}`);
   sliders.seg.el.style.opacity = P.mode === 'quad' || P.mode === 'off' ? 0.4 : 1;
   freezeBtn.classList.toggle('on', frozen);
   invertBtn.classList.toggle('on', P.invert);

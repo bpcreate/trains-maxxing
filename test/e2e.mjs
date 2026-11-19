@@ -552,6 +552,57 @@ try {
     });
     assert(diff.colours >= 3, `picture should not be blank (found ${diff.colours} colours)`);
     assert(diff.avg < 30, `top and bottom halves should mirror each other (average difference ${diff.avg.toFixed(1)})`);
+
+    // read the kaleidoscope picture at 320x180 and compare pairs of points that a pattern should make equal
+    const pairs = (list) => kal.evaluate((list) => {
+      const c = document.createElement('canvas');
+      c.width = 320;
+      c.height = 180;
+      const g = c.getContext('2d');
+      g.drawImage(document.getElementById('view'), 0, 0, 320, 180);
+      const d = g.getImageData(0, 0, 320, 180).data;
+      const px = (x, y) => { const i = (Math.round(y) * 320 + Math.round(x)) * 4; return [d[i], d[i + 1], d[i + 2]]; };
+      let total = 0;
+      const variety = new Set();
+      for (const [x1, y1, x2, y2] of list) {
+        const a = px(x1, y1), b = px(x2, y2);
+        total += Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]);
+        variety.add(a.map((v) => v >> 5).join());
+      }
+      return { avg: total / list.length, colours: variety.size };
+    }, list);
+
+    // circles: rings are 0.22 of the picture height wide (39.6 px here) and the picture mirrors across each ring edge
+    await kal.click('#modes .chip:has-text("Circles")');
+    await kal.evaluate(() => window.__kaleido.still());
+    await sleep(900);
+    const EDGE = 0.22 * 180;
+    const ringPairs = [];
+    for (let k = 0; k < 24; k++) {
+      const ang = ((k + 0.37) / 24) * Math.PI * 2;
+      for (const dist of [7, 14, 22, 30]) {
+        ringPairs.push([160 + Math.cos(ang) * (EDGE - dist), 90 + Math.sin(ang) * (EDGE - dist), 160 + Math.cos(ang) * (EDGE + dist), 90 + Math.sin(ang) * (EDGE + dist)]);
+      }
+    }
+    const rings = await pairs(ringPairs);
+    assert(rings.colours >= 3, `circles picture should not be blank (found ${rings.colours} colours)`);
+    assert(rings.avg < 30, `circles should mirror across the ring edge (average difference ${rings.avg.toFixed(1)})`);
+    await kal.screenshot({ path: path.join(SHOTS, 'kaleido-circles.png') });
+
+    // spiral with an even number of mirrors looks the same turned upside down
+    await kal.click('#modes .chip:has-text("Spiral")');
+    await kal.evaluate(() => window.__kaleido.still());
+    await sleep(900);
+    assert((await kal.textContent('#sliders .slider >> nth=0')).includes('Arms: 4'), 'slider should count arms in Spiral mode');
+    const turnPairs = [];
+    for (let y = 12; y < 85; y += 9) for (let x = 12; x < 310; x += 17) turnPairs.push([x, y, 319 - x, 179 - y]);
+    const spiral = await pairs(turnPairs);
+    assert(spiral.colours >= 3, `spiral picture should not be blank (found ${spiral.colours} colours)`);
+    assert(spiral.avg < 30, `spiral should match itself turned half way round (average difference ${spiral.avg.toFixed(1)})`);
+    // and it must differ from circles: same points, different picture
+    assert((await pairs(ringPairs)).avg > rings.avg + 5, 'spiral should not look like circles');
+    await kal.screenshot({ path: path.join(SHOTS, 'kaleido-spiral.png') });
+
     await kal.click('#modes .chip:has-text("Honeycomb")');
     await sleep(600);
     await kal.screenshot({ path: path.join(SHOTS, 'kaleido-photo.png') });
