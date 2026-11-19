@@ -130,6 +130,23 @@ test('layerVisible follows the crossfader and overlay switches', () => {
   assert.equal(layerVisible(s, 'C'), true);
 });
 
+test('tempo: a tap re-phases the beat without making the beat count jump', () => {
+  const s = defaultState();
+  s.tempo = { bpm: 120, t0: 0, mic: false };
+  // 100.2 beats in, somebody taps slightly late at a faster tempo
+  const tapAt = 100.2 * 500;
+  reduce(s, { type: 'tempo', bpm: 150, t0: tapAt });
+  assert.equal(s.tempo.bpm, 150);
+  assert.ok(Math.abs(beatAt(s.tempo, tapAt) - 100) < 1e-9, 'the tap lands exactly on beat 100');
+  // changing only the tempo, anchored on a beat, keeps count and phase
+  reduce(s, { type: 'tempo', bpm: 75, t0: tapAt });
+  assert.ok(Math.abs(beatAt(s.tempo, tapAt) - 100) < 1e-9);
+  assert.ok(Math.abs(beatAt(s.tempo, tapAt + 800) - 101) < 1e-9, 'one beat is now 800 ms');
+  // out-of-range tempo is ignored
+  reduce(s, { type: 'tempo', bpm: 900 });
+  assert.equal(s.tempo.bpm, 75);
+});
+
 test('beatAt counts beats from t0', () => {
   assert.equal(beatAt({ bpm: 120, t0: 1000 }, 3000), 4);
 });

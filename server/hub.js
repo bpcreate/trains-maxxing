@@ -138,6 +138,12 @@ export class Hub {
     ws.on('close', () => {
       this.clients.delete(client.id);
       if (this.lives.remove(client.id)) this.broadcast({ t: 'rtc.gone', id: client.id }, 'stage');
+      // a phone that dropped off mid-press must not leave Strobe (etc.) stuck on
+      if (role === 'remote' && !this.state.auto.on) {
+        for (const [id, on] of Object.entries(this.state.mom)) {
+          if (on) this.dispatch({ type: 'set', path: `mom.${id}`, value: false });
+        }
+      }
       this._peers();
     });
     ws.on('error', () => {});

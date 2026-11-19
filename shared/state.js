@@ -228,8 +228,12 @@ export function reduce(state, a) {
       return true;
     }
     case 'tempo': {
+      // a.t0 is the time of a beat (a tap, a detected kick). The beat *count*
+      // carries on from where it was, so nothing scheduled on beats jumps.
+      const at = typeof a.t0 === 'number' && Number.isFinite(a.t0) ? a.t0 : null;
+      const n = at != null ? Math.round(beatAt(state.tempo, at)) : 0;
       if (typeof a.bpm === 'number' && a.bpm >= 40 && a.bpm <= 220) state.tempo.bpm = a.bpm;
-      if (typeof a.t0 === 'number' && Number.isFinite(a.t0)) state.tempo.t0 = a.t0;
+      if (at != null) state.tempo.t0 = at - (n * 60000) / state.tempo.bpm;
       return true;
     }
     case 'fav': {

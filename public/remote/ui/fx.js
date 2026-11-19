@@ -67,8 +67,11 @@ export function fxView(app) {
   });
   const scale = (k) => () => {
     buzz();
-    const v = clamp(net.state.tempo.bpm * k, 40, 220);
-    net.act({ type: 'tempo', bpm: Math.round(v * 10) / 10 });
+    const t = net.state.tempo;
+    const v = clamp(t.bpm * k, 40, 220);
+    // anchor on the most recent beat so the new tempo stays in step with the old one
+    const lastBeat = t.t0 + (Math.floor(beatAt(t, net.now())) * 60000) / t.bpm;
+    net.act({ type: 'tempo', bpm: Math.round(v * 10) / 10, t0: lastBeat });
   };
   const mic = h('button', { class: 'chip', type: 'button', onclick: () => { buzz(); net.set('tempo.mic', !net.state.tempo.mic); } }, '🎤 Listen');
   const master = slider({ value: 1, cls: 'master', label: 'Screen brightness', onInput: (v) => net.set('master', v) });

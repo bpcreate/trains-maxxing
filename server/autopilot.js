@@ -28,7 +28,17 @@ export class Autopilot {
     this.momOff = [];     // [{ id, at }]
     this.overlayOff = null;
     this.lastBar = null;
+    this.lastBeat = null;
     this.recent = [];
+  }
+
+  /** The beat counter jumped (tempo re-tapped): move everything scheduled along with it. */
+  _shift(d) {
+    if (this.nextCut != null) this.nextCut += d;
+    if (this.fade) this.fade.start += d;
+    for (const f of this.fxOff) f.at += d;
+    for (const m of this.momOff) m.at += d;
+    if (this.overlayOff != null) this.overlayOff += d;
   }
 
   /** A person touched a control group: leave it alone for a while. */
@@ -70,8 +80,11 @@ export class Autopilot {
       if (!s.layers[live].src) this._loadRandom(live, chaos);
       this.nextCut = (Math.floor(beat / 4) + 1) * 4;
     }
-    // tempo was re-tapped and the beat counter jumped: re-anchor the schedule
-    if (this.nextCut - beat > 200 || beat - this.nextCut > 200) this.nextCut = beat + 4;
+    if (this.lastBeat != null && Math.abs(beat - this.lastBeat) > 2) {
+      this._shift(beat - this.lastBeat);
+      this.lastBar = Math.floor(beat / 4);
+    }
+    this.lastBeat = beat;
 
     // running crossfade
     if (this.fade) {

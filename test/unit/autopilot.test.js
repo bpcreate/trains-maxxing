@@ -112,6 +112,27 @@ test('switching off tidies up the effects it turned on', () => {
   for (const [id, on] of Object.entries(r.state.mom)) assert.equal(on, false, `${id} left held`);
 });
 
+test('a jump in the beat counter does not stall it or leave a hold effect stuck', () => {
+  const r = rig({ chaos: 1, seed: 5 });
+  r.state.auto.on = true;
+  r.run(20000);
+  // beat zero moves an hour into the future: the counter drops by thousands of beats
+  r.state.tempo.t0 += 3600000;
+  const before = r.log.length;
+  r.run(40000);
+  assert.ok(r.log.slice(before).some((a) => a.type === 'load'), 'keeps cutting after the jump');
+  // nothing may be held for longer than a couple of beats
+  let since = null;
+  for (const a of r.log) {
+    if (!/^mom\./.test(a.path || '')) continue;
+    if (a.value) since ??= a.at;
+    else {
+      assert.ok(a.at - since < 2000, `hold effect stayed on for ${a.at - since} ms`);
+      since = null;
+    }
+  }
+});
+
 test('with an empty library it waits quietly', () => {
   const r = rig({ sources: [] });
   r.state.auto.on = true;
