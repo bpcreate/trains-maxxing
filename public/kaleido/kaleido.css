@@ -1,0 +1,65 @@
+@font-face {
+  font-family: 'Tag';
+  src: url('/fonts/sedgwick-ave-display-latin-400-normal.woff2') format('woff2');
+  font-display: swap;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; background: #000; color: #f2f2f5; overflow: hidden; overscroll-behavior: none; }
+body { font: 15px/1.35 system-ui, -apple-system, sans-serif; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; touch-action: manipulation; }
+button:focus-visible, input:focus-visible { outline: 2px solid #00e5ff; outline-offset: 2px; }
+#view { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; touch-action: none; background: #000; }
+
+#status {
+  position: fixed; left: calc(12px + env(safe-area-inset-left)); top: calc(12px + env(safe-area-inset-top)); z-index: 3;
+  display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; background: rgba(10, 10, 14, .7);
+  font-size: 13px; font-weight: 700; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+#status i { width: 10px; height: 10px; border-radius: 50%; background: #666; }
+#status.linked i { background: #7dff5a; }
+#status.onair { background: #d1122a; }
+#status.onair i { background: #fff; animation: blink 1s infinite; }
+@keyframes blink { 50% { opacity: .3; } }
+#menu-btn {
+  position: fixed; right: calc(12px + env(safe-area-inset-right)); top: calc(12px + env(safe-area-inset-top)); z-index: 3;
+  width: 48px; height: 48px; border-radius: 50%; background: rgba(10, 10, 14, .7); font-size: 20px;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+
+#start {
+  position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  background: radial-gradient(circle at 50% 40%, #2a0f3a, #050508 70%); padding: 24px; text-align: center;
+}
+#start h1 { font: 400 clamp(44px, 9vw, 96px)/1.25 'Tag', cursive; margin: 0 0 6px; color: #ff2bd6; text-shadow: 3px 3px 0 #00e5ff; }
+#start p { max-width: 520px; margin: 0; color: #b9b9c9; }
+#start input {
+  width: min(320px, 80vw); height: 48px; border-radius: 12px; border: 1px solid #3a3a4a; background: #15151c; color: #fff;
+  font: inherit; font-size: 16px; text-align: center; -webkit-user-select: text; user-select: text;
+}
+#start button { min-height: 48px; padding: 0 22px; border-radius: 999px; background: #22222e; border: 1px solid #3a3a4a; font-weight: 700; }
+#start button.big { min-height: 64px; font-size: 19px; background: #7dff5a; color: #06120a; border-color: #7dff5a; padding: 0 36px; }
+#start-error { color: #ff8a7d; font-weight: 600; }
+#start-error:empty { display: none; }
+
+#controls {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 3; padding: 10px calc(12px + env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
+  background: linear-gradient(transparent, rgba(5, 5, 8, .85) 30%); display: flex; flex-direction: column; gap: 8px;
+}
+.chips { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.chip {
+  min-height: 44px; padding: 0 16px; border-radius: 999px; background: rgba(34, 34, 46, .9); border: 1px solid #3a3a4a;
+  font-size: 14px; font-weight: 700; white-space: nowrap;
+}
+.chip.on { background: #f2f2f5; color: #000; border-color: #f2f2f5; }
+.chip.slot { min-width: 44px; padding: 0 10px; border-style: dashed; }
+.chip.slot.filled { border-style: solid; border-color: #00e5ff; color: #00e5ff; }
+.sliders { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px; }
+.slider {
+  --k: 0; position: relative; height: 44px; border-radius: 12px; background: rgba(34, 34, 46, .9); border: 1px solid #3a3a4a;
+  touch-action: none; overflow: hidden;
+}
+.sl-fill { position: absolute; inset: 0 auto 0 0; width: calc(14px + var(--k) * (100% - 28px)); background: rgba(255, 43, 214, .35); }
+.sl-thumb { position: absolute; top: 4px; bottom: 4px; width: 8px; border-radius: 4px; background: #ff2bd6; left: calc(14px + var(--k) * (100% - 28px) - 4px); }
+.sl-label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 700; pointer-events: none; text-shadow: 0 1px 3px #000; }
+@media (prefers-reduced-motion: reduce) { #status.onair i { animation: none; } }

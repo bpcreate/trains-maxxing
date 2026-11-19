@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { reduce, hydrate, APP_NAME } from '../shared/state.js';
+import { reduce, hydrate, APP_NAME, LAYERS } from '../shared/state.js';
 import { Autopilot } from './autopilot.js';
 import { TapTempo } from './clock.js';
 import { LiveRegistry } from './rtc.js';
@@ -184,9 +184,9 @@ export class Hub {
       }
       case 'jog': {
         // scratching: straight through to the stage, no state involved
-        if (role !== 'remote') return;
-        this.autopilot.touch('decks');
-        this.broadcast({ t: 'jog', l: msg.l, pos: msg.pos, vel: msg.vel, end: !!msg.end }, 'stage');
+        if (role !== 'remote' || !LAYERS.includes(msg.l) || !Number.isFinite(msg.pos)) return;
+        this.autopilot.touch(msg.l === 'A' || msg.l === 'B' ? 'decks' : 'overlay');
+        this.broadcast({ t: 'jog', l: msg.l, pos: msg.pos, vel: Number.isFinite(msg.vel) ? msg.vel : 0, end: !!msg.end }, 'stage');
         return;
       }
       case 'spray': {

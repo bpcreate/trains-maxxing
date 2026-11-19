@@ -32,8 +32,8 @@ export class LayerPlayer {
     this.seq = null;
     this.scrub = null;         // { pos (0..1), vel, coast }
     this.audioOk = false;
-    this.next.addEventListener('error', () => this._failed(this.next));
-    this.cur.addEventListener('error', () => this._failed(this.cur));
+    // the two elements trade places, so look at which one actually errored
+    for (const el of [this.cur, this.next]) el.addEventListener('error', () => this._failed(el));
   }
 
   _failed(el) {
@@ -156,9 +156,11 @@ export class LayerPlayer {
   /** Scratch messages from the phone. pos is 0..1 of the clip, vel is per second. */
   jog({ pos, vel, end }) {
     if (!this.curKey || this.isLive) return;
+    if (!Number.isFinite(pos)) pos = this.scrub ? this.scrub.pos : this.progress;
+    if (!Number.isFinite(vel)) vel = 0;
     if (!end) {
       this.scrub = { pos: clamp(pos, 0, 1), vel: 0, coast: false };
-    } else if (this.scrub && Math.abs(vel || 0) * this.duration > 0.6) {
+    } else if (this.scrub && Math.abs(vel) * this.duration > 0.6) {
       this.scrub.vel = vel; // thrown: keep rolling and slow down
       this.scrub.coast = true;
     } else {
@@ -176,7 +178,7 @@ export class LayerPlayer {
 
   _seek(t) {
     const v = this.cur;
-    if (!v.seeking && Math.abs(v.currentTime - t) > 0.012) v.currentTime = t;
+    if (Number.isFinite(t) && !v.seeking && Math.abs(v.currentTime - t) > 0.012) v.currentTime = t;
   }
 
   /**

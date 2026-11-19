@@ -45,11 +45,12 @@ function updatePanel() {
   $('status').textContent = !net.connected ? 'Connecting…'
     : `${net.clips.length} clips · ${n} phone${n === 1 ? '' : 's'} connected` + (net.lives.length ? ` · ${net.lives.length} live input${net.lives.length === 1 ? '' : 's'}` : '');
 }
+function refreshQr() {
+  $('qr-remote').src = '/api/qr/remote.svg?' + Date.now();
+  $('qr-kaleido').src = '/api/qr/kaleido.svg?' + Date.now();
+}
 net.on('status', () => {
-  if (net.connected) {
-    $('qr-remote').src = '/api/qr/remote.svg?' + Date.now();
-    $('qr-kaleido').src = '/api/qr/kaleido.svg?' + Date.now();
-  }
+  if (net.connected) refreshQr();
   updatePanel();
 });
 net.on('peers', () => {
@@ -73,6 +74,7 @@ addEventListener('keydown', (e) => {
   if (e.key === 'f' || e.key === 'F') fullscreen();
   else if (e.key === 'q' || e.key === 'Q') {
     panelWanted = panel.classList.contains('hidden');
+    if (panelWanted) refreshQr(); // the laptop may have changed Wi-Fi since
     updatePanel();
   } else if (e.key === 'b' || e.key === 'B') net.act({ type: 'set', path: 'blackout', value: !net.state.blackout });
 });

@@ -42,13 +42,13 @@ export function libraryView(app) {
     app.returnToMix = false;
   }
 
-  function card({ src, name, thumb, meta, badges, fav, favId }) {
+  function card({ src, name, thumb, meta, badges, fav, favId, liveId }) {
     const s = net.state;
     const on = LAYERS.filter((id) => s.layers[id].src === src);
     const cued = LAYERS.filter((id) => s.layers[id].cue === src);
     return h('div', { class: 'clip' + (on.length ? ' playing' : '') },
       h('button', { class: 'clip-main', type: 'button', onclick: () => load(src) },
-        thumb ? h('img', { src: thumb, alt: '', loading: 'lazy' }) : h('div', { class: 'no-thumb' }, '…'),
+        thumb ? h('img', { src: thumb, alt: '', loading: liveId ? null : 'lazy', 'data-live': liveId }) : h('div', { class: 'no-thumb' }, '…'),
         h('div', { class: 'clip-badges' },
           on.map((id) => h('span', { class: `deck-letter l${id}` }, id)),
           cued.map((id) => h('span', { class: `deck-letter l${id} cued` }, id)),
@@ -74,7 +74,7 @@ export function libraryView(app) {
     if (filter === 'all' || filter === 'live') {
       for (const l of net.lives) {
         if (query && !l.name.toLowerCase().includes(query)) continue;
-        items.push(card({ src: l.src, name: l.name, thumb: app.liveThumbs[l.id], meta: 'live input', badges: h('span', { class: 'badge live' }, '● LIVE') }));
+        items.push(card({ src: l.src, name: l.name, thumb: app.liveThumbs[l.id], meta: 'live input', liveId: l.id, badges: h('span', { class: 'badge live' }, '● LIVE') }));
       }
     }
     if (filter !== 'live') {
@@ -115,6 +115,12 @@ export function libraryView(app) {
       sig = next;
       renderFilters();
       renderGrid();
+    } else {
+      // keep the live thumbnails moving without rebuilding the grid
+      for (const img of grid.querySelectorAll('img[data-live]')) {
+        const fresh = app.liveThumbs[img.dataset.live];
+        if (fresh && img.src !== fresh) img.src = fresh;
+      }
     }
   }
   return { el, update };

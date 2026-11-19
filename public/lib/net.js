@@ -16,6 +16,7 @@ export class Net {
     this.canPrep = true;
     this.you = null;
     this.connected = false;
+    this.everConnected = false;
     this.offset = 0; // server clock minus local clock
     this.handlers = {};
     this._pending = new Map(); // path -> value waiting to be sent
@@ -78,6 +79,7 @@ export class Net {
         this.canPrep = m.canPrep !== false;
         this._setClips(m.clips);
         this.connected = true;
+        this.everConnected = true;
         this.emit('status');
         this.emit('clips');
         this.emit('state', null);

@@ -122,7 +122,7 @@ function update() {
   xf.set(s.xfade);
   xfA.classList.toggle('live', s.xfade < 0.5);
   xfB.classList.toggle('live', s.xfade >= 0.5);
-  banner.textContent = !net.connected ? 'Reconnecting to the laptop…'
+  banner.textContent = !net.connected ? (net.everConnected ? 'Reconnecting to the laptop…' : 'Not connected yet. If this stays, scan the QR code on the big screen again.')
     : net.peers.stages === 0 ? 'The big screen is not open on the laptop yet.' : '';
   banner.hidden = !banner.textContent;
   views[current].update();
@@ -140,9 +140,8 @@ net.on('preview', (m) => {
   views.tag.setPreview(m.img);
 });
 net.on('live.thumb', (m) => {
-  const fresh = !app.liveThumbs[m.id];
   app.liveThumbs[m.id] = m.img;
-  if (fresh || current === 'clips') update();
+  update();
 });
 showTab('mix');
 
