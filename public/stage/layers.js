@@ -70,7 +70,9 @@ export class LayerPlayer {
     return d ? clamp(this.pos / d, 0, 1) : 0;
   }
 
-  _load(el, url) {
+  _load(el, url, hdr = false) {
+    // HDR original (proxies are tone mapped already): the renderer converts it
+    el.dataset.hdr = hdr && url.startsWith('/media/') ? '1' : '';
     el.src = url;
     el.load();
   }
@@ -110,7 +112,7 @@ export class LayerPlayer {
       if (this.nextUrl !== url) {
         this.nextKey = want;
         this.nextUrl = url;
-        this._load(this.next, url);
+        this._load(this.next, url, clip.hdr);
       } else if (this.next.readyState >= 2) {
         // ready: swap it in
         const sameClip = this.curKey === want;
@@ -150,7 +152,7 @@ export class LayerPlayer {
     if (this.failed.has(url) || this.nextUrl === url) return;
     this.nextKey = cue;
     this.nextUrl = url;
-    this._load(this.next, url);
+    this._load(this.next, url, clip.hdr);
   }
 
   /** Scratch messages from the phone. pos is 0..1 of the clip, vel is per second. */

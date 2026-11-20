@@ -119,9 +119,15 @@ export class Renderer {
       L.has = false;
       return;
     }
+    let src = video;
+    if (video.dataset && video.dataset.hdr) {
+      // WebGL uploads of HDR (HLG/PQ) video skip Chrome's tone mapping and come
+      // out flat and grey; a 2D canvas draw applies it, so go through one.
+      src = this._sdr(i, video);
+    }
     gl.bindTexture(gl.TEXTURE_2D, L.tex);
     try {
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
     } catch {
       L.has = false;
       return;
@@ -133,6 +139,24 @@ export class Renderer {
     }
     L.has = true;
     L.asp = video.videoWidth / video.videoHeight;
+  }
+
+  _sdr(i, video) {
+    this.sdrCanvas = this.sdrCanvas || [];
+    let c = this.sdrCanvas[i];
+    if (!c) {
+      c = this.sdrCanvas[i] = document.createElement('canvas');
+      c.g = c.getContext('2d', { alpha: false });
+    }
+    const s = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));
+    const w = Math.round(video.videoWidth * s);
+    const h = Math.round(video.videoHeight * s);
+    if (c.width !== w || c.height !== h) {
+      c.width = w;
+      c.height = h;
+    }
+    c.g.drawImage(video, 0, 0, w, h);
+    return c;
   }
 
   /** Resolve "auto" fit: fill unless that would crop away most of the picture. */

@@ -8,7 +8,7 @@ test('parseProbe: landscape H.264 with audio', () => {
   Duration: 00:01:02.50, start: 0.000000, bitrate: 8123 kb/s
   Stream #0:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(tv, bt709, progressive), 1920x1080 [SAR 1:1 DAR 16:9], 7990 kb/s, 29.97 fps, 29.97 tbr, 30k tbn (default)
   Stream #0:1[0x2](und): Audio: aac (LC) (mp4a / 0x6134706D), 44100 Hz, stereo, fltp, 128 kb/s (default)`);
-  assert.deepEqual(m, { dur: 62.5, w: 1920, h: 1080, fps: 29.97, audio: true });
+  assert.deepEqual(m, { dur: 62.5, w: 1920, h: 1080, fps: 29.97, audio: true, hdr: false });
 });
 
 test('parseProbe: phone portrait stored sideways (rotation side data)', () => {
@@ -49,7 +49,17 @@ test('parseProbe: cover art is not mistaken for the video, junk gives zeros', ()
   Stream #0:0: Video: mjpeg, yuvj420p, 600x600, 90k tbr (attached pic)
   Stream #0:1: Video: h264, yuv420p, 640x360, 25 fps`);
   assert.equal(m.w, 640);
-  assert.deepEqual(parseProbe('a.txt: Invalid data found when processing input'), { dur: 0, w: 0, h: 0, fps: 0, audio: false });
+  assert.deepEqual(parseProbe('a.txt: Invalid data found when processing input'), { dur: 0, w: 0, h: 0, fps: 0, audio: false, hdr: false });
+});
+
+test('parseProbe: iPhone HLG HEVC is flagged HDR, portrait turned', () => {
+  const m = parseProbe(`  Duration: 00:00:21.03, start: 0.000000, bitrate: 9100 kb/s
+  Stream #0:0[0x1](und): Video: hevc (Main 10) (hvc1 / 0x31637668), yuv420p10le(tv, bt2020nc/bt2020/arib-std-b67), 1920x1080, 8426 kb/s, 30 fps, 30 tbr, 600 tbn (default)
+    Side data:
+      displaymatrix: rotation of -90.00 degrees`);
+  assert.equal(m.hdr, true);
+  assert.equal(m.w, 1080);
+  assert.equal(m.h, 1920);
 });
 
 test('TapTempo: steady taps give the BPM, a long pause starts over', () => {

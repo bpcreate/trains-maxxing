@@ -12,6 +12,21 @@ import { createRequire } from 'node:module';
 const VIDEO_EXT = new Set(['.mp4', '.mov', '.m4v', '.webm', '.mkv', '.avi', '.mts', '.3gp']);
 const STRIP_FRAMES = 8;
 
+// HDR (BT.2020 HLG/PQ) to SDR BT.709. Without this, iPhone footage comes out
+// flat and desaturated, because 8-bit outputs keep the HDR colour tags and
+// browsers show the BT.2020 colours as if they were BT.709.
+const TONEMAP = 'zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,'
+  + 'tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p';
+
+function hasFilter(bin, name) {
+  try {
+    const r = spawnSync(bin, ['-hide_banner', '-filters'], { encoding: 'utf8' });
+    return new RegExp(`\\s${name}\\s`).test(r.stdout || '');
+  } catch {
+    return false;
+  }
+}
+
 export function findFfmpeg() {
   const candidates = [process.env.TM_FFMPEG, 'ffmpeg'];
   try {
@@ -28,7 +43,7 @@ export function findFfmpeg() {
 
 /** Parse the text `ffmpeg -i file` prints into clip metadata. */
 export function parseProbe(text) {
-  const out = { dur: 0, w: 0, h: 0, fps: 0, audio: false };
+  const out = { dur: 0, w: 0, h: 0, fps: 0, audio: false, hdr: false };
   const d = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(text);
   if (d) out.dur = +d[1] * 3600 + +d[2] * 60 + +d[3];
   const lines = text.split(/\r?\n/);
@@ -42,6 +57,8 @@ export function parseProbe(text) {
     }
     const f = /([\d.]+)\s*fps/.exec(line);
     if (f) out.fps = +f[1];
+    // HLG (iPhone default) or PQ transfer: needs tone mapping to look right in SDR
+    out.hdr = /arib-std-b67|smpte2084/.test(line);
     // phone footage is often stored sideways with a rotation flag
     let rot = 0;
     for (let i = vi + 1; i < lines.length && !/^\s*Stream #/.test(lines[i]); i++) {
@@ -99,8 +116,10 @@ export class Media {
     this.proxyFormat = proxyFormat; // "mp4" (H.264) for real use, "webm" for tests
     this.onChange = onChange;
     this.ffmpeg = findFfmpeg();
+    this.canToneMap = !!this.ffmpeg && hasFilter(this.ffmpeg, 'zscale') && hasFilter(this.ffmpeg, 'tonemap');
     this.clips = new Map(); // id -> clip
     this.files = new Map(); // id -> absolute path
+    this.hdr = new Map(); // id -> true when the proxy needs tone mapping
     this.metaQueue = makeQueue(2);
     this.proxyQueue = makeQueue(1);
     this._scanTimer = null;
@@ -171,7 +190,7 @@ export class Media {
         id,
         name: path.basename(rel, path.extname(rel)),
         crate: dir === '.' ? '' : dir.split(path.sep).join(' / '),
-        dur: 0, w: 0, h: 0, portrait: false, audio: false,
+        dur: 0, w: 0, h: 0, portrait: false, audio: false, hdr: false,
         ready: false,           // metadata + thumbnail done
         thumb: null, strip: null,
         url: `/media/${id}`,
@@ -196,6 +215,7 @@ export class Media {
     let meta = null;
     try {
       meta = JSON.parse(await fsp.readFile(metaFile, 'utf8'));
+      if (!('hdr' in meta)) meta = null; // cached before HDR detection: probe again
     } catch { /* not cached yet */ }
 
     if (!meta && this.ffmpeg) {
@@ -205,14 +225,16 @@ export class Media {
       else meta = null; // unreadable (maybe still copying) — a later scan retries when the file changes
     }
     if (meta) {
-      Object.assign(clip, { dur: meta.dur, w: meta.w, h: meta.h, audio: meta.audio, portrait: meta.h > meta.w });
+      Object.assign(clip, { dur: meta.dur, w: meta.w, h: meta.h, audio: meta.audio, hdr: !!meta.hdr, portrait: meta.h > meta.w });
     }
+    const tm = meta && meta.hdr && this.canToneMap ? `${TONEMAP},` : '';
+    if (meta) this.hdr.set(clip.id, !!tm);
 
     if (this.ffmpeg && meta) {
       const thumb = this._p(clip.id, '.jpg');
       if (!fs.existsSync(thumb)) {
         await run(this.ffmpeg, ['-y', '-hide_banner', '-ss', String(meta.dur * 0.3), '-i', abs,
-          '-frames:v', '1', '-vf', "scale='if(gt(iw,ih),320,-2)':'if(gt(iw,ih),-2,320)'", '-q:v', '5', thumb], { timeout: 60000 });
+          '-frames:v', '1', '-vf', `${tm}scale='if(gt(iw,ih),320,-2)':'if(gt(iw,ih),-2,320)'`, '-q:v', '5', thumb], { timeout: 60000 });
       }
       if (fs.existsSync(thumb)) clip.thumb = `/cache/${clip.id}.jpg`;
 
@@ -225,7 +247,7 @@ export class Media {
         }
         const chains = [];
         for (let i = 0; i < STRIP_FRAMES; i++) {
-          chains.push(`[${i}:v]scale=96:54:force_original_aspect_ratio=increase,crop=96:54[s${i}]`);
+          chains.push(`[${i}:v]${tm}scale=96:54:force_original_aspect_ratio=increase,crop=96:54[s${i}]`);
         }
         const joined = Array.from({ length: STRIP_FRAMES }, (_, i) => `[s${i}]`).join('');
         args.push('-filter_complex', `${chains.join(';')};${joined}hstack=inputs=${STRIP_FRAMES}`, '-frames:v', '1', '-q:v', '6', strip);
@@ -265,8 +287,16 @@ export class Media {
     const ext = this.proxyFormat;
     const out = this._p(clip.id, `.proxy.${ext}`);
     const tmp = this._p(clip.id, `.proxy.part.${ext}`);
+    if (!this.hdr.has(clip.id) && this.canToneMap) {
+      // asked for before its metadata was read (e.g. used straight away)
+      const { err } = await run(this.ffmpeg, ['-hide_banner', '-i', abs], { timeout: 30000 });
+      this.hdr.set(clip.id, parseProbe(err).hdr);
+    }
     // shorter side at most 720 px, 30 fps, keyframe every 2 frames, no B-frames
-    const vf = "scale='if(gt(iw,ih),-2,min(720,iw))':'if(gt(iw,ih),min(720,ih),-2)',fps=30,format=yuv420p";
+    // HDR: shrink first (cheap, still 10-bit), then tone map the small picture
+    const vf = this.hdr.get(clip.id)
+      ? `zscale=w='if(gt(iw,ih),-2,min(720,iw))':h='if(gt(iw,ih),min(720,ih),-2)':filter=bilinear,${TONEMAP},fps=30,format=yuv420p`
+      : "scale='if(gt(iw,ih),-2,min(720,iw))':'if(gt(iw,ih),min(720,ih),-2)',fps=30,format=yuv420p";
     const codec = ext === 'webm'
       ? ['-c:v', 'libvpx', '-deadline', 'realtime', '-cpu-used', '8', '-b:v', '2500k', '-g', '2', '-an']
       : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '22', '-g', '2', '-bf', '0',
