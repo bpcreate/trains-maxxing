@@ -76,6 +76,8 @@ addEventListener('keydown', (e) => {
     panelWanted = panel.classList.contains('hidden');
     if (panelWanted) refreshQr(); // the laptop may have changed Wi-Fi since
     updatePanel();
+  } else if (e.key === 's' || e.key === 'S') {
+    $('stats').hidden = !$('stats').hidden;
   } else if (e.key === 'b' || e.key === 'B') net.act({ type: 'set', path: 'blackout', value: !net.state.blackout });
 });
 addEventListener('pointerdown', unlockAudio);
@@ -158,10 +160,49 @@ function audible(s, id) {
   return s.layers[id].on ? s.layers[id].opacity : 0;
 }
 
+// ---- S key: frame rate and what each deck is playing, for finding stutter ----
+const stats = { frames: [], work: [], seeks: { A: 0, B: 0, C: 0, D: 0 }, lastShow: 0 };
+function showStats(t) {
+  const el = $('stats');
+  if (el.hidden || t - stats.lastShow < 500) return;
+  const span = (t - stats.lastShow) / 1000;
+  stats.lastShow = t;
+  const f = stats.frames.splice(0);
+  const w = stats.work.splice(0);
+  const fps = f.length / span;
+  const worst = f.length ? Math.max(...f) : 0;
+  const janky = f.filter((x) => x > 25).length;
+  const work = w.length ? w.reduce((a, b) => a + b, 0) / w.length : 0;
+  const lines = [
+    `stage ${fps.toFixed(0)} fps  worst ${worst.toFixed(0)} ms  janky ${janky}  js ${work.toFixed(1)} ms/frame  canvas ${renderer.w}x${renderer.h}`,
+  ];
+  for (const id of LAYERS) {
+    const p = players[id];
+    const ly = net.state.layers[id];
+    if (!ly.src) continue;
+    const v = p.el;
+    const clip = net.clipsById.get(ly.src);
+    const kind = p.isLive ? 'LIVE' : !p.curUrl ? 'loading' : p.curUrl.startsWith('/cache/') ? 'prepared'
+      : (v && v.dataset.hdr ? 'ORIGINAL hdr' : 'ORIGINAL');
+    let q = '';
+    if (v && v.getVideoPlaybackQuality) {
+      const pq = v.getVideoPlaybackQuality();
+      q = `dropped ${pq.droppedVideoFrames}/${pq.totalVideoFrames}`;
+    }
+    const seeks = (stats.seeks[id] / span).toFixed(0);
+    stats.seeks[id] = 0;
+    lines.push(`${id} ${(clip && clip.name) || ly.src}  ${kind}  ${v ? `${v.videoWidth}x${v.videoHeight}` : ''}  ${ly.mode} x${ly.rate}`
+      + `  ${v && v.paused ? 'stepping' : 'playing'}  seeks/s ${seeks}  ${q}  prep:${clip ? clip.prep : '?'}`);
+  }
+  el.textContent = lines.join('\n');
+}
+
 function frame(t) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.1, Math.max(0.001, (t - last) / 1000));
+  if (!$('stats').hidden) stats.frames.push(t - last);
   last = t;
+  const workStart = performance.now();
   const s = net.state;
   const beatNow = beatAt(s.tempo, net.now());
 
@@ -176,6 +217,11 @@ function frame(t) {
 
   renderer.render(s, { time: (t - t0) / 1000, beat: beatNow, dt });
   spray.tick(dt);
+  if (!$('stats').hidden) {
+    stats.work.push(performance.now() - workStart);
+    for (const id of LAYERS) if (players[id].el && players[id].el.seeking) stats.seeks[id]++;
+    showStats(t);
+  }
   $('spray').style.opacity = s.blackout ? 0 : 1;
   tagEl.style.visibility = s.blackout ? 'hidden' : 'visible';
   beat.tick();
