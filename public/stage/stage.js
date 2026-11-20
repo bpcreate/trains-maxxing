@@ -37,9 +37,22 @@ for (const id of LAYERS) players[id] = new LayerPlayer(id, { onNeed: (clipId) =>
 
 // ---- help card with QR codes ----
 
-let panelWanted = null; // null = automatic (shown until a phone connects)
+let panelWanted = null; // null = automatic (shown until the first phone connects)
+// Once a phone has been connected the card never comes back by itself: a phone
+// that falls asleep drops its connection, and the show must carry on uncovered.
+// (Kept for the tab's lifetime so a reload mid-show stays clean too. Q shows it.)
+let hadRemote = false;
+try {
+  hadRemote = sessionStorage.getItem('tm.hadRemote') === '1';
+} catch { /* storage blocked */ }
 function updatePanel() {
-  const auto = net.peers.remotes === 0;
+  if (net.peers.remotes > 0 && !hadRemote) {
+    hadRemote = true;
+    try {
+      sessionStorage.setItem('tm.hadRemote', '1');
+    } catch { /* storage blocked */ }
+  }
+  const auto = net.peers.remotes === 0 && !hadRemote;
   panel.classList.toggle('hidden', !(panelWanted ?? auto));
   const n = net.peers.remotes;
   $('status').textContent = !net.connected ? 'Connecting…'
