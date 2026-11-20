@@ -161,7 +161,7 @@ function audible(s, id) {
 }
 
 // ---- S key: frame rate and what each deck is playing, for finding stutter ----
-const stats = { frames: [], work: [], seeks: { A: 0, B: 0, C: 0, D: 0 }, lastShow: 0 };
+const stats = { frames: [], work: [], seeks: { A: 0, B: 0, C: 0, D: 0 }, vf: {}, lastShow: 0 };
 function showStats(t) {
   const el = $('stats');
   if (el.hidden || t - stats.lastShow < 500) return;
@@ -187,7 +187,16 @@ function showStats(t) {
     let q = '';
     if (v && v.getVideoPlaybackQuality) {
       const pq = v.getVideoPlaybackQuality();
-      q = `dropped ${pq.droppedVideoFrames}/${pq.totalVideoFrames}`;
+      // frames the video actually delivered since the last update (resets when the element changes)
+      const prev = stats.vf[id];
+      const vfps = prev && prev.v === v && pq.totalVideoFrames >= prev.n ? (pq.totalVideoFrames - prev.n) / span : 0;
+      stats.vf[id] = { v, n: pq.totalVideoFrames };
+      let ahead = 0;
+      for (let i = 0; i < v.buffered.length; i++) {
+        if (v.buffered.start(i) <= v.currentTime + 0.1 && v.buffered.end(i) > v.currentTime) ahead = v.buffered.end(i) - v.currentTime;
+      }
+      const wait = v.readyState < 3 ? `WAITING(rs${v.readyState} net${v.networkState})` : 'ok';
+      q = `video ${vfps.toFixed(0)} fps  ${wait}  buffered ${ahead.toFixed(1)}s  t ${v.currentTime.toFixed(1)}  dropped ${pq.droppedVideoFrames}/${pq.totalVideoFrames}`;
     }
     const seeks = (stats.seeks[id] / span).toFixed(0);
     stats.seeks[id] = 0;
