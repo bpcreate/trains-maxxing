@@ -115,10 +115,18 @@ export class Renderer {
   setLayer(i, video, wantMips) {
     const gl = this.gl;
     const L = this.layerTex[i];
-    if (!video || video.readyState < 2 || !video.videoWidth) {
+    if (!video) {
       L.has = false;
+      L.src = null;
       return;
     }
+    if (video.readyState < 2 || !video.videoWidth) {
+      // Mid-seek (reverse and scratching seek every frame) the video has no
+      // frame to give for a moment: keep the last one instead of going black.
+      if (L.src !== video) L.has = false;
+      return;
+    }
+    L.src = video;
     let src = video;
     if (video.dataset && video.dataset.hdr) {
       // WebGL uploads of HDR (HLG/PQ) video skip Chrome's tone mapping and come
