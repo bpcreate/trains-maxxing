@@ -219,9 +219,12 @@ function frame(t) {
     const p = players[id];
     const ly = s.layers[id];
     p.sync(ly, net.clipsById, lives.videos);
-    p.tick(dt, ly, { beat: beatNow, rewind: s.mom.rewind, audible: audible(s, id) });
+    // Grab the frame before tick() moves the playhead: reverse and scratching
+    // seek every frame, and a video has no frame to give from the moment a
+    // seek starts until it lands. Taking it first shows every landed seek.
     if (!p.el) renderer.setLayer(i, null);
     else if (!s.mom.freeze && layerVisible(s, id)) renderer.setLayer(i, p.el, renderer.fitFor(i, ly.fit) === 'fit');
+    p.tick(dt, ly, { beat: beatNow, rewind: s.mom.rewind, audible: audible(s, id) });
   });
 
   renderer.render(s, { time: (t - t0) / 1000, beat: beatNow, dt });
