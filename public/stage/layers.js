@@ -4,6 +4,7 @@
 // shunting and scratching are done by seeking every frame (smooth on proxies).
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const STEP_FPS = 30;
 
 function makeVideo() {
   const v = document.createElement('video');
@@ -180,7 +181,13 @@ export class LayerPlayer {
 
   _seek(t) {
     const v = this.cur;
-    if (Number.isFinite(t) && !v.seeking && Math.abs(v.currentTime - t) > 0.012) v.currentTime = t;
+    if (!Number.isFinite(t) || v.seeking) return;
+    // Step on the clip's frame grid (prepared copies are 30 fps): ask for the
+    // middle of each frame, once. Seeking to arbitrary times asked for the same
+    // frame twice and skipped others, which made reverse and scratching judder.
+    const frame = Math.floor(t * STEP_FPS);
+    const target = Math.min((frame + 0.5) / STEP_FPS, Math.max(0, (v.duration || t) - 0.001));
+    if (Math.abs(v.currentTime - target) > 0.002) v.currentTime = target;
   }
 
   /**

@@ -209,7 +209,8 @@ function showStats(t) {
         if (v.buffered.start(i) <= v.currentTime + 0.1 && v.buffered.end(i) > v.currentTime) ahead = v.buffered.end(i) - v.currentTime;
       }
       const wait = v.readyState < 3 ? `WAITING(rs${v.readyState} net${v.networkState})` : 'ok';
-      q = `video ${vfps.toFixed(0)} fps  ${wait}  buffered ${ahead.toFixed(1)}s  t ${v.currentTime.toFixed(1)}  dropped ${pq.droppedVideoFrames}/${pq.totalVideoFrames}`;
+      // while stepping (reverse, scratch) this counts decodes per seek, not pictures shown
+      q = `${v.paused ? 'stepping, decodes' : 'video'} ${vfps.toFixed(0)}${v.paused ? '/s' : ` fps (expect ${Math.round(30 * Math.abs(ly.rate))})`}  ${wait}  buffered ${ahead.toFixed(1)}s  t ${v.currentTime.toFixed(1)}  dropped ${pq.droppedVideoFrames}/${pq.totalVideoFrames}`;
     }
     const seeks = (stats.seeks[id] / span).toFixed(0);
     stats.seeks[id] = 0;
@@ -219,8 +220,42 @@ function showStats(t) {
   el.textContent = lines.join('\n');
 }
 
+// ---- once a second, tell the server how playback is going (data/perf.log) ----
+const perf = { last: 0, frames: 0, worst: 0, long: 0, decks: {} };
+function reportPerf(t, s) {
+  const span = (t - perf.last) / 1000;
+  const d = { fps: Math.round(perf.frames / span), worst: Math.round(perf.worst), long: perf.long, vis: document.visibilityState, auto: s.auto.on, x: s.xfade,
+    fx: Object.keys(s.fx).filter((k) => s.fx[k].on).join(','), mom: Object.keys(s.mom).filter((k) => s.mom[k]).join(','), L: {} };
+  for (const id of LAYERS) {
+    const p = players[id];
+    const ly = s.layers[id];
+    const v = p.el;
+    if (!ly.src || !v || p.isLive || !v.getVideoPlaybackQuality) {
+      delete perf.decks[id];
+      continue;
+    }
+    const q = v.getVideoPlaybackQuality();
+    const prev = perf.decks[id];
+    const same = prev && prev.v === v && prev.url === p.curUrl;
+    d.L[id] = {
+      clip: (net.clipsById.get(ly.src) || {}).name, kind: !p.curUrl ? 'loading' : p.curUrl.startsWith('/cache/') ? 'prep' : 'orig',
+      mode: ly.mode, rate: ly.rate, dir: p.dir, on: layerVisible(s, id), stepping: v.paused, scrub: !!p.scrub,
+      vfps: same ? Math.round((q.totalVideoFrames - prev.n) / span) : null, // null: clip just changed
+      moved: same ? +(v.currentTime - prev.t).toFixed(2) : null,
+      drop: same ? q.droppedVideoFrames - prev.dr : null, rs: v.readyState,
+    };
+    perf.decks[id] = { v, url: p.curUrl, n: q.totalVideoFrames, dr: q.droppedVideoFrames, t: v.currentTime };
+  }
+  net.send({ t: 'perf', d });
+  perf.last = t;
+  perf.frames = perf.worst = perf.long = 0;
+}
+
 function frame(t) {
   requestAnimationFrame(frame);
+  perf.frames++;
+  perf.worst = Math.max(perf.worst, t - last);
+  if (t - last > 25) perf.long++;
   const dt = Math.min(0.1, Math.max(0.001, (t - last) / 1000));
   if (!$('stats').hidden) stats.frames.push(t - last);
   last = t;
@@ -253,6 +288,7 @@ function frame(t) {
   if (s.tempo.mic !== beat.active) syncMic();
 
   if (!net.connected) return;
+  if (t - perf.last >= 1000) reportPerf(t, s);
   if (t - lastPos > 200) {
     lastPos = t;
     const p = {};

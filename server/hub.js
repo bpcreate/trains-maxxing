@@ -16,6 +16,8 @@ export class Hub {
     this.media = media;
     this.info = info; // urls etc. passed to clients in the hello message
     this.stateFile = path.join(dataDir, 'state.json');
+    this.perfFile = path.join(dataDir, 'perf.log');
+    this.perfBytes = 0;
     let saved = null;
     try {
       saved = JSON.parse(fs.readFileSync(this.stateFile, 'utf8'));
@@ -222,6 +224,14 @@ export class Hub {
       case 'live.thumb': {
         if (role !== 'stage') return;
         this.broadcast(msg, 'remote');
+        return;
+      }
+      case 'perf': {
+        // once-a-second playback report from the stage, for chasing stutter after the fact
+        if (role !== 'stage' || this.perfBytes > 20e6) return;
+        const line = JSON.stringify({ at: new Date().toISOString(), stage: client.id, ...msg.d }).slice(0, 4000) + '\n';
+        this.perfBytes += line.length;
+        fsp.appendFile(this.perfFile, line).catch(() => {});
         return;
       }
       case 'need': {
