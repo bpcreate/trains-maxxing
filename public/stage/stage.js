@@ -221,11 +221,21 @@ function showStats(t) {
 }
 
 // ---- once a second, tell the server how playback is going (data/perf.log) ----
-const perf = { last: 0, frames: 0, worst: 0, long: 0, decks: {} };
+const perf = { last: 0, frames: 0, worst: 0, long: 0, decks: {}, up: 0, rend: 0, prev: 0, work: 0, gpu: null };
+function gpuName() {
+  try {
+    const gl = renderer.gl;
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    return String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)).slice(0, 120);
+  } catch { return '?'; }
+}
 function reportPerf(t, s) {
   const span = (t - perf.last) / 1000;
   const d = { fps: Math.round(perf.frames / span), worst: Math.round(perf.worst), long: perf.long, vis: document.visibilityState, auto: s.auto.on, x: s.xfade,
-    fx: Object.keys(s.fx).filter((k) => s.fx[k].on).join(','), mom: Object.keys(s.mom).filter((k) => s.mom[k]).join(','), L: {} };
+    fx: Object.keys(s.fx).filter((k) => s.fx[k].on).join(','), mom: Object.keys(s.mom).filter((k) => s.mom[k]).join(','),
+    // slowest single frame this second, by part (ms): video uploads, drawing, phone preview, all script
+    up: +perf.up.toFixed(1), rend: +perf.rend.toFixed(1), prev: +perf.prev.toFixed(1), work: +perf.work.toFixed(1),
+    gpu: perf.gpu || (perf.gpu = gpuName()), size: `${renderer.w}x${renderer.h}`, dpr: devicePixelRatio, remotes: net.peers.remotes, L: {} };
   for (const id of LAYERS) {
     const p = players[id];
     const ly = s.layers[id];
@@ -248,7 +258,7 @@ function reportPerf(t, s) {
   }
   net.send({ t: 'perf', d });
   perf.last = t;
-  perf.frames = perf.worst = perf.long = 0;
+  perf.frames = perf.worst = perf.long = perf.up = perf.rend = perf.prev = perf.work = 0;
 }
 
 function frame(t) {
@@ -263,19 +273,25 @@ function frame(t) {
   const s = net.state;
   const beatNow = beatAt(s.tempo, net.now());
 
+  let upMs = 0;
   LAYERS.forEach((id, i) => {
     const p = players[id];
     const ly = s.layers[id];
     p.sync(ly, net.clipsById, lives.videos);
+    const u0 = performance.now();
     // Grab the frame before tick() moves the playhead: reverse and scratching
     // seek every frame, and a video has no frame to give from the moment a
     // seek starts until it lands. Taking it first shows every landed seek.
     if (!p.el) renderer.setLayer(i, null);
     else if (!s.mom.freeze && layerVisible(s, id)) renderer.setLayer(i, p.el, renderer.fitFor(i, ly.fit) === 'fit');
+    upMs += performance.now() - u0;
     p.tick(dt, ly, { beat: beatNow, rewind: s.mom.rewind, audible: audible(s, id) });
   });
+  perf.up = Math.max(perf.up, upMs);
 
+  const r0 = performance.now();
   renderer.render(s, { time: (t - t0) / 1000, beat: beatNow, dt });
+  perf.rend = Math.max(perf.rend, performance.now() - r0);
   spray.tick(dt);
   if (!$('stats').hidden) {
     stats.work.push(performance.now() - workStart);
@@ -288,6 +304,7 @@ function frame(t) {
   if (s.tempo.mic !== beat.active) syncMic();
 
   if (!net.connected) return;
+  perf.work = Math.max(perf.work, performance.now() - workStart);
   if (t - perf.last >= 1000) reportPerf(t, s);
   if (t - lastPos > 200) {
     lastPos = t;
@@ -301,9 +318,11 @@ function frame(t) {
   if (net.peers.remotes > 0 && t - lastPreview > 500) {
     lastPreview = t;
     // must happen in the same frame as the render, before the buffer is cleared
+    const pv0 = performance.now();
     pctx.drawImage(glCanvas, 0, 0, 192, 108);
     if (!s.blackout && spray.dirty) pctx.drawImage($('spray'), 0, 0, 192, 108);
     net.send({ t: 'preview', img: previewCanvas.toDataURL('image/jpeg', 0.5) });
+    perf.prev = Math.max(perf.prev, performance.now() - pv0);
   }
   if (net.peers.remotes > 0 && lives.videos.size && t - lastThumb > 1000) {
     lastThumb = t;
