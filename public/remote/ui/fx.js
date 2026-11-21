@@ -1,8 +1,8 @@
 // FX tab: hold pads, effect pads with an XY pad, tempo and master level.
 
 import { h, slider, holdPad, buzz, clamp } from './dom.js';
-import { FX, MOMENTARY } from '/shared/fx.js';
-import { beatAt } from '/shared/state.js';
+import { FX, MOMENTARY } from '../../shared/fx.js';
+import { beatAt } from '../../shared/state.js';
 
 export function fxView(app) {
   const { net } = app;

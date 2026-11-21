@@ -2,9 +2,9 @@
 // controlled by touch, streamed to the Trains Maxxing mixer as a live input.
 // Works on its own too when no mixer is around.
 
-import { Net } from '/lib/net.js';
-import { h, clamp, buzz, onLongPress } from '/remote/ui/dom.js';
-import { beatAt, layerVisible, LAYERS } from '/shared/state.js';
+import { Net } from '../lib/net.js';
+import { h, clamp, buzz, onLongPress } from '../remote/ui/dom.js';
+import { beatAt, layerVisible, LAYERS } from '../shared/state.js';
 import { Streamer } from './stream.js';
 
 const $ = (id) => document.getElementById(id);

@@ -34,7 +34,7 @@ export class Streamer {
     try {
       this.stream ||= this.canvas.captureStream(30);
       this.peers.get(stage)?.close();
-      const pc = new RTCPeerConnection({ iceServers: [] }); // local network only
+      const pc = new RTCPeerConnection({ iceServers: this.net.info.ice || [] }); // none on the local network, so it works without internet
       this.peers.set(stage, pc);
       for (const track of this.stream.getVideoTracks()) {
         track.contentHint = 'motion';

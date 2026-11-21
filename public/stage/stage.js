@@ -1,7 +1,7 @@
 // The big screen. Mirrors the show state from the server and renders it.
 
-import { Net } from '/lib/net.js';
-import { LAYERS, beatAt, layerVisible } from '/shared/state.js';
+import { Net } from '../lib/net.js';
+import { LAYERS, beatAt, layerVisible } from '../shared/state.js';
 import { Renderer } from './renderer.js';
 import { LayerPlayer } from './layers.js';
 import { LiveInputs } from './live.js';
@@ -59,8 +59,8 @@ function updatePanel() {
     : `${net.clips.length} clips · ${n} phone${n === 1 ? '' : 's'} connected` + (net.lives.length ? ` · ${net.lives.length} live input${net.lives.length === 1 ? '' : 's'}` : '');
 }
 function refreshQr() {
-  $('qr-remote').src = '/api/qr/remote.svg?' + Date.now();
-  $('qr-kaleido').src = '/api/qr/kaleido.svg?' + Date.now();
+  $('qr-remote').src = `${net.base}/api/qr/remote.svg?k=${encodeURIComponent(net.key)}&${Date.now()}`;
+  $('qr-kaleido').src = `${net.base}/api/qr/kaleido.svg?k=${encodeURIComponent(net.key)}&${Date.now()}`;
 }
 net.on('status', () => {
   if (net.connected) refreshQr();
@@ -195,7 +195,7 @@ function showStats(t) {
     if (!ly.src) continue;
     const v = p.el;
     const clip = net.clipsById.get(ly.src);
-    const kind = p.isLive ? 'LIVE' : !p.curUrl ? 'loading' : p.curUrl.startsWith('/cache/') ? 'prepared'
+    const kind = p.isLive ? 'LIVE' : !p.curUrl ? 'loading' : p.curUrl.includes('/cache/') ? 'prepared'
       : (v && v.dataset.hdr ? 'ORIGINAL hdr' : 'ORIGINAL');
     let q = '';
     if (v && v.getVideoPlaybackQuality) {
@@ -248,7 +248,7 @@ function reportPerf(t, s) {
     const prev = perf.decks[id];
     const same = prev && prev.v === v && prev.url === p.curUrl;
     d.L[id] = {
-      clip: (net.clipsById.get(ly.src) || {}).name, kind: !p.curUrl ? 'loading' : p.curUrl.startsWith('/cache/') ? 'prep' : 'orig',
+      clip: (net.clipsById.get(ly.src) || {}).name, kind: !p.curUrl ? 'loading' : p.curUrl.includes('/cache/') ? 'prep' : 'orig',
       mode: ly.mode, rate: ly.rate, dir: p.dir, on: layerVisible(s, id), stepping: v.paused, scrub: !!p.scrub,
       own: !!v.frame, // true: the stage decodes this clip itself, frame by frame
       vfps: same ? Math.round((q.totalVideoFrames - prev.n) / span) : null, // null: clip just changed

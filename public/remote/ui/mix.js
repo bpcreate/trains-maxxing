@@ -1,7 +1,7 @@
 // Mix tab: the two decks, how they blend, GO, and the two overlay layers.
 
 import { h, slider, chips, buzz, clamp, fmtTime } from './dom.js';
-import { LAYERS } from '/shared/state.js';
+import { LAYERS } from '../../shared/state.js';
 
 const BLEND_OPTS = [['mix', 'Mix'], ['add', 'Add'], ['screen', 'Screen'], ['multiply', 'Multiply'], ['diff', 'Diff'], ['lighten', 'Lighten'], ['key', 'Cut-out']];
 const FIT_OPTS = [['auto', 'Auto'], ['fill', 'Fill'], ['fit', 'Fit'], ['tile', 'Tile'], ['turn', 'Turn']];

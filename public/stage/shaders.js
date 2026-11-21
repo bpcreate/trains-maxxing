@@ -4,7 +4,7 @@
 //   post      -> feedback   (effects; reads last frame for trails)
 //   final     -> screen     (strobe, master level, blackout)
 
-import { FX_IDS } from '/shared/fx.js';
+import { FX_IDS } from '../shared/fx.js';
 
 export const VERT = `#version 300 es
 in vec2 aPos;

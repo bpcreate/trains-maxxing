@@ -1,6 +1,6 @@
 @font-face {
   font-family: 'Tag';
-  src: url('/fonts/sedgwick-ave-display-latin-400-normal.woff2') format('woff2');
+  src: url('../fonts/sedgwick-ave-display-latin-400-normal.woff2') format('woff2');
   font-display: swap;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }

@@ -1,7 +1,7 @@
 // Clips tab: browse the library and send clips (or live inputs) to a layer.
 
 import { h, chips, buzz, fmtTime, fmtBytes } from './dom.js';
-import { LAYERS } from '/shared/state.js';
+import { LAYERS } from '../../shared/state.js';
 
 export function libraryView(app) {
   const { net } = app;

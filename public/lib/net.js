@@ -1,11 +1,16 @@
 // Shared WebSocket client: keeps a live mirror of the show state, reconnects
 // by itself, and sends actions (with throttling for sliders).
 
-import { reduce, defaultState } from '/shared/state.js';
+import { reduce, defaultState } from '../shared/state.js';
+
+// Where the app lives on this address: '' normally, '/trains' when it is served as part of a bigger site.
+// Every page sits one folder down (/stage/, /remote/, /kaleido/), so it is the page's folder with the last part removed.
+export const BASE = new URL('..', location.href).pathname.replace(/\/$/, '');
 
 export class Net {
   constructor(role) {
     this.role = role;
+    this.base = BASE;
     this.state = defaultState();
     this.clips = [];
     this.clipsById = new Map();
@@ -43,7 +48,7 @@ export class Net {
 
   _open() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${location.host}/ws?role=${this.role}&k=${encodeURIComponent(this.key)}`);
+    const ws = new WebSocket(`${proto}://${location.host}${BASE}/ws?role=${this.role}&k=${encodeURIComponent(this.key)}`);
     this.ws = ws;
     ws.onmessage = (ev) => {
       let m;
@@ -64,6 +69,9 @@ export class Net {
   }
 
   _setClips(clips) {
+    if (BASE) {
+      for (const c of clips) for (const f of ['url', 'proxy', 'thumb', 'strip']) if (c[f]) c[f] = BASE + c[f];
+    }
     this.clips = clips;
     this.clipsById = new Map(clips.map((c) => [c.id, c]));
   }

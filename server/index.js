@@ -40,9 +40,17 @@ function lanIps() {
   return ips.sort((a, b) => score(a) - score(b));
 }
 
+// When the app is put on the internet (TM_PUBLIC_URL), a web server or tunnel on this machine passes visitors on,
+// so every one of them arrives from this machine. Such a request says who it is really for and from in its headers.
+const PUBLIC_URL = (process.env.TM_PUBLIC_URL || '').replace(/\/+$/, '');
+const PASSED_ON = ['x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-real-ip', 'forwarded', 'cf-connecting-ip', 'via'];
+const passedOn = (req) => PASSED_ON.some((h) => req.headers[h] !== undefined);
 const isLoopback = (req) => {
   const a = req.socket.remoteAddress || '';
-  return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
+  if (a !== '127.0.0.1' && a !== '::1' && a !== '::ffff:127.0.0.1') return false;
+  if (passedOn(req)) return false;
+  const host = String(req.headers.host || '').replace(/:\d+$/, '');
+  return host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
 };
 
 // ---- session token: keeps strangers on the same Wi-Fi off the controls ----
@@ -67,7 +75,22 @@ const tokenOk = (given) => {
   return a.length === b.length && timingSafeEqual(a, b);
 };
 
+const cookieKey = (req) => /(?:^|;\s*)tm_k=([^;]*)/.exec(req.headers.cookie || '')?.[1] || '';
+
+// Connecting video straight between two devices in different places needs a helper that tells each its outside address.
+function iceServers() {
+  if (process.env.TM_ICE) {
+    try {
+      return JSON.parse(process.env.TM_ICE);
+    } catch { console.warn('TM_ICE is not valid JSON; ignoring it.'); }
+  }
+  return PUBLIC_URL ? [{ urls: 'stun:stun.l.google.com:19302' }] : [];
+}
+
 function urls() {
+  if (PUBLIC_URL) {
+    return { stage: `${PUBLIC_URL}/stage/?k=${TOKEN}`, remote: `${PUBLIC_URL}/remote/?k=${TOKEN}`, kaleido: `${PUBLIC_URL}/kaleido/?k=${TOKEN}` };
+  }
   const ip = lanIps()[0] || 'localhost';
   return {
     stage: `http://localhost:${PORT}/stage/`,
@@ -89,9 +112,25 @@ let hub = null;
 const app = express();
 app.disable('x-powered-by');
 
+// A visitor who arrives with the code keeps it in a cookie, so the videos the pages then ask for can be checked too.
+app.use((req, res, next) => {
+  const k = req.query.k;
+  if (k && !OPEN_ACCESS && tokenOk(k) && cookieKey(req) !== k) {
+    const secure = req.socket.encrypted || req.headers['x-forwarded-proto'] === 'https';
+    res.append('Set-Cookie', `tm_k=${encodeURIComponent(k)}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`);
+  }
+  next();
+});
+// Over the internet the videos are not for everyone who finds the address; on the local network they stay as they were.
+const videosGuard = (req, res, next) => {
+  if (passedOn(req) && !tokenOk(req.query.k) && !tokenOk(decodeURIComponent(cookieKey(req)))) return res.status(403).end();
+  next();
+};
+app.use(['/media', '/cache'], videosGuard);
+
 app.get('/', (req, res) => {
   const q = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
-  res.redirect(isLoopback(req) ? '/stage/' : `/remote/${q}`);
+  res.redirect(isLoopback(req) ? 'stage/' : `remote/${q}`); // no leading slash: it also works when the app is part of a bigger site
 });
 
 // QR codes and links: only for the laptop itself or someone who already has the token
@@ -132,7 +171,7 @@ function onUpgrade(req, socket, head) {
 
 async function main() {
   await media.start();
-  hub = new Hub({ media, dataDir: DATA_DIR, info: { httpsPort: HTTPS_PORT, port: PORT } });
+  hub = new Hub({ media, dataDir: DATA_DIR, info: { httpsPort: HTTPS_PORT, port: PORT, ice: iceServers() } });
 
   const httpServer = http.createServer(app);
   httpServer.on('upgrade', onUpgrade);
@@ -157,9 +196,10 @@ async function main() {
 
   const u = urls();
   console.log(`\n  ${APP_NAME} is running\n`);
-  console.log(`  Big screen (open on this laptop):  ${u.stage}`);
+  if (PUBLIC_URL) console.log(`  On the internet at ${PUBLIC_URL}: these links carry the access code, so share them only with people you trust.\n`);
+  console.log(`  Big screen${PUBLIC_URL ? '' : ' (open on this laptop)'}:  ${u.stage}`);
   console.log(`  Phone remote:                      ${u.remote}`);
-  if (httpsOk) console.log(`  iPad kaleidoscope:                 ${u.kaleido}`);
+  if (httpsOk || PUBLIC_URL) console.log(`  iPad kaleidoscope:                 ${u.kaleido}`);
   console.log(`\n  Videos folder: ${MEDIA_DIR}  (${media.list().length} clips)`);
   if (!media.ffmpeg) console.log('  ! ffmpeg was not found: no thumbnails, and no smooth scrubbing/reverse.');
   if (!lanIps().length) console.log('  ! No network found: connect the laptop to Wi-Fi or a phone hotspot.');

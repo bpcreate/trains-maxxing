@@ -1,7 +1,7 @@
 // WebGL2 compositor for the stage.
 
-import { BLENDS, XSTYLES, LAYERS } from '/shared/state.js';
-import { FX_IDS } from '/shared/fx.js';
+import { BLENDS, XSTYLES, LAYERS } from '../shared/state.js';
+import { FX_IDS } from '../shared/fx.js';
 import { VERT, COMPOSITE, SLIT, POST, FINAL } from './shaders.js';
 
 const MAX_W = 1920;

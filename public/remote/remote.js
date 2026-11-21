@@ -1,6 +1,6 @@
 // Phone remote: shell (top bar, tabs, crossfader, lock) around the five tabs.
 
-import { Net } from '/lib/net.js';
+import { Net } from '../lib/net.js';
 import { h, slider, buzz } from './ui/dom.js';
 import { mixView } from './ui/mix.js';
 import { libraryView } from './ui/library.js';

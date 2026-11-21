@@ -45,7 +45,7 @@ export class LayerPlayer {
     const key = isNext ? this.nextKey : this.curKey;
     if (!url) return;
     this.failed.add(url);
-    if (url.startsWith('/media/') && key) this.onNeed(key);
+    if (url.includes('/media/') && key) this.onNeed(key);
     if (isNext) {
       this.nextUrl = null;
       this.nextKey = null;
@@ -83,12 +83,12 @@ export class LayerPlayer {
 
   _load(el, url, hdr = false) {
     // HDR original (proxies are tone mapped already): the renderer converts it
-    el.dataset.hdr = hdr && url.startsWith('/media/') ? '1' : '';
+    el.dataset.hdr = hdr && url.includes('/media/') ? '1' : '';
     el.src = url;
     el.load();
     // prepared copies are decoded by the stage itself, frame by frame (see framesource.js)
     if (el._fs) el._fs.close();
-    el._fs = canDecodeFrames && FrameSource.enabled && url.startsWith('/cache/') && url.includes('.mp4') ? new FrameSource(url) : null;
+    el._fs = canDecodeFrames && FrameSource.enabled && url.includes('/cache/') && url.includes('.mp4') ? new FrameSource(url) : null;
   }
 
   _unload(el) {

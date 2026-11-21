@@ -1,7 +1,7 @@
 // Auto tab: autopilot, saved scenes, and how to connect live inputs.
 
 import { h, slider, buzz, onLongPress } from './dom.js';
-import { SCENE_SLOTS } from '/shared/state.js';
+import { SCENE_SLOTS } from '../../shared/state.js';
 
 export function autoView(app) {
   const { net } = app;
@@ -35,8 +35,8 @@ export function autoView(app) {
   const kaleidoQr = h('img', { class: 'qr', alt: 'QR code for the kaleidoscope page' });
   const kaleidoUrl = h('code', { class: 'url' });
   const liveList = h('p', { class: 'note' });
-  fetch(`/api/info?k=${encodeURIComponent(net.key)}`).then((r) => r.json()).then((info) => {
-    kaleidoQr.src = `/api/qr/kaleido.svg?k=${encodeURIComponent(net.key)}`;
+  fetch(`${net.base}/api/info?k=${encodeURIComponent(net.key)}`).then((r) => r.json()).then((info) => {
+    kaleidoQr.src = `${net.base}/api/qr/kaleido.svg?k=${encodeURIComponent(net.key)}`;
     kaleidoUrl.textContent = info.urls.kaleido;
   }).catch(() => {});
 

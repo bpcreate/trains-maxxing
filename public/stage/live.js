@@ -27,8 +27,8 @@ export class LiveInputs {
     try {
       if (d.sdp?.type === 'offer') {
         this._drop(from);
-        // local network only: no STUN/TURN servers, so it works without internet
-        const pc = new RTCPeerConnection({ iceServers: [] });
+        // on the local network there are no STUN/TURN servers, so it works without internet
+        const pc = new RTCPeerConnection({ iceServers: this.net.info.ice || [] });
         this.peers.set(from, pc);
         pc.onicecandidate = (e) => {
           if (e.candidate) this.net.send({ t: 'rtc', to: from, d: { ice: e.candidate } });
