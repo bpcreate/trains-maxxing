@@ -16,11 +16,14 @@ canvas.height = 720;
 
 // left to right: plainest first, then mirrors, then the fractals
 const MODES = [['off', 'Plain camera'], ['wedge', 'Classic'], ['hex', 'Honeycomb'], ['tunnel', 'Tunnel'], ['circles', 'Circles'], ['spiral', 'Spiral'],
-  ['frames', 'Frames'], ['tri', 'Triangles'], ['carpet', 'Carpet'], ['koch', 'Snowflake'], ['bubbles', 'Bubbles'], ['julia', 'Julia']];
-const FRACTALS = ['tri', 'carpet', 'koch', 'bubbles', 'julia']; // the slider sets how deep these go
-const MODE_CODE = { off: 0, wedge: 1, hex: 3, tunnel: 4, circles: 5, spiral: 6, frames: 7, tri: 8, carpet: 9, koch: 10, bubbles: 11, julia: 12 }; // matches the shader
+  ['frames', 'Frames'], ['tri', 'Triangles'], ['carpet', 'Carpet'], ['koch', 'Snowflake'], ['bubbles', 'Bubbles'], ['julia', 'Julia'],
+  ['void', 'Void'], ['voidmax', 'Void Maxxing'], ['quantum', 'Quantum Bubbles']];
+const FRACTALS = ['tri', 'carpet', 'koch', 'bubbles', 'julia', 'voidmax', 'quantum']; // the slider sets how deep these go
+const MODE_CODE = { off: 0, wedge: 1, hex: 3, tunnel: 4, circles: 5, spiral: 6, frames: 7, tri: 8, carpet: 9, koch: 10, bubbles: 11, julia: 12, void: 13, voidmax: 14, quantum: 15 }; // matches the shader
 const DEFAULTS = { mode: 'wedge', seg: 8, spin: 0.15, twist: 0, zoom: 1, offX: 0, offY: 0, hue: 0, hueSpin: 0, dive: 0, sat: 1.2, satSpin: 0, trails: 0, invert: false, beat: false }; // hueSpin, satSpin: 0 off, 1 slow, 2 fast
 const P = { ...DEFAULTS };
+// Void Maxxing: each void holds three more, VOID_STEP times smaller, VOID_OUT of the way out from its centre (matches the shader)
+const VOID_STEP = 2.380952, VOID_OUT = 0.5;
 // Endless dive. Each of these patterns looks the same again after zooming by a fixed amount about one point:
 // C is that point, L is the zoom (as a natural log) and the turn that go with one step, view is how much of the pattern fits on screen.
 const DIVES = {
@@ -41,6 +44,12 @@ const DIVES = {
     const wx = Math.sqrt((m + ax) / 2), wy = Math.sign(ay || 1) * Math.sqrt((m - ax) / 2); // square root of 1 - 4c
     return { C: [(1 + wx) / 2, wy / 2], L: [Math.log(Math.hypot(1 + wx, wy)), Math.atan2(wy, 1 + wx)], view: 1, ahead: 3, extra: 3 };
   },
+  // the hole stays put while the picture round it shrinks into it; a plain picture never repeats, so each loop dissolves into the next
+  void: () => ({ C: [0, 0], L: [Math.log(2), 0], view: 1 }),
+  // the point that sits inside a void inside a void, for ever: falling towards it passes one rim after another
+  voidmax: () => ({ C: [VOID_STEP * VOID_OUT / (VOID_STEP - 1), 0], L: [Math.log(VOID_STEP), 0], view: 0.9 / VOID_STEP ** 2, extra: 4 }),
+  // every size of bubble is the same foam drawn at half the size
+  quantum: () => ({ C: [0.37, 0.21], L: [Math.log(2), 0], view: 2, extra: 1 }),
 };
 let rot = 0;
 let divePhase = 0; // how far through one loop of the endless dive, 0..1
@@ -74,6 +83,8 @@ vec3 hueShift(vec3 c, float h) {
   return c * ca + cross(k, c) * sa + k * dot(k, c) * (1.0 - ca);
 }
 vec2 cmul(vec2 a, vec2 b) { return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x); }
+float hash1(vec2 v) { return fract(sin(dot(v, vec2(127.1, 311.7))) * 43758.5453); }
+vec2 hash2(vec2 v) { return fract(sin(vec2(dot(v, vec2(269.5, 183.3)), dot(v, vec2(113.5, 271.9)))) * 43758.5453); }
 
 // Which point of the source picture a point of the screen shows.
 // dz and zmag place the view for the endless dive (see main); they are 1 when not diving.
@@ -82,7 +93,7 @@ vec2 warp(vec2 p, vec2 dz, float zmag, out float fog) {
   bool dive = uDiveOn > 0.5;
   if (uMode > 0.5) {
     // julia uses the rotation to change its shape instead of turning the picture
-    p = rot2(p, (uMode > 11.5 ? 0.0 : uRot) + uTwist * length(p) * 4.0);
+    p = rot2(p, (uMode > 11.5 && uMode < 12.5 ? 0.0 : uRot) + uTwist * length(p) * 4.0);
     float depth = clamp(uSeg * 0.5, 1.0, 12.0); // how many times the fractal patterns repeat inside themselves
     if (uMode < 1.5) {
       // each fold of the angle makes two wedges, so the count on the slider is the number of wedges on screen
@@ -195,7 +206,7 @@ vec2 warp(vec2 p, vec2 dz, float zmag, out float fog) {
       }
       p = (abs(mod(p + 1.0, 4.0) - 2.0) - 1.0) * 0.5;
       fog = 1.0 - smoothstep(40.0, 400.0, sc / zmag); // where it gets too fine to draw, fade to dark
-    } else {
+    } else if (uMode < 12.5) {
       // julia: square the point and add a constant, over and over. The rotation picks the constant, so spinning reshapes it.
       vec2 c = 0.7885 * vec2(cos(uRot), sin(uRot));
       p = dive ? uDiveC + cmul(p * uDiveV, dz) : p * 2.6;
@@ -205,6 +216,73 @@ vec2 warp(vec2 p, vec2 dz, float zmag, out float fog) {
         if (dot(p, p) > 16.0) break;
       }
       p *= 0.25;
+    } else if (uMode < 13.5) {
+      // void: a black hole in the middle of the picture. The picture bends round it the way light does:
+      // the middle of the picture is smeared into a ring, and just outside the hole it shows again, flipped.
+      float hole = (0.06 + 0.03 * depth) * (1.0 + 0.2 * uKick);
+      float r = max(length(p), 1e-4);
+      float ring = hole * 1.5;
+      fog = smoothstep(hole, hole * 1.05, r) * (1.0 + 1.6 * exp(-(r - hole) / (hole * 0.12))); // black inside, a glowing edge
+      p *= (1.0 - ring * ring / (r * r)) * zmag; // diving shrinks the picture into the hole
+    } else if (uMode < 14.5) {
+      // void maxxing: one void fills the screen and only a thin rim of picture is left. Inside it sit three more
+      // voids, each with its own rim and three more inside, and so on down.
+      const float STEP = 2.380952; // how many times smaller each void is than the one it sits in
+      const float OUT = 0.5;       // how far out from the centre the three sit
+      const float RIM = 0.08;
+      float view = dive ? uDiveV / zmag : 2.15;
+      p = dive ? uDiveC + cmul(p * uDiveV, dz) : p * view;
+      float sc = 1.0;
+      vec2 q = vec2(0.0);
+      fog = 0.0;
+      for (int i = 0; i < 18; i++) {
+        if (float(i) >= depth + uDiveX) break;
+        float r = length(p);
+        if (r > 1.0) break;
+        if (r > 1.0 - RIM) {
+          // the whole picture squeezed into the rim, its middle on the outer edge
+          float f = (r - 1.0 + RIM) / RIM;
+          q = p / r * (1.0 - f) * 0.5;
+          fog = smoothstep(0.0, 0.2, f) * smoothstep(1.0, 0.8, f) * 1.5;
+          // a rim thinner than a dot on the screen fades out instead of sparkling
+          fog *= smoothstep(0.5, 1.5, RIM * 720.0 * uZoom / (sc * view));
+          break;
+        }
+        // three ways round the centre look the same: fold them onto one and step into the void there
+        float a = atan(p.y, p.x);
+        a = abs(mod(a + PI / 3.0, 2.0 * PI / 3.0) - PI / 3.0);
+        p = (r * vec2(cos(a), sin(a)) - vec2(OUT, 0.0)) * STEP;
+        sc *= STEP;
+      }
+      p = q;
+    } else {
+      // quantum bubbles: foam. Bubbles of every size pop into being, swell and vanish, never in the same place twice.
+      // Each one is a glass ball with the whole picture inside it; the picture itself is only just visible behind.
+      vec2 w = dive ? uDiveC + cmul(p * uDiveV, dz) : p;
+      fog = 0.08;
+      float sc = 2.0; // the biggest bubbles sit in squares half the screen high; each layer after is half the size
+      for (int i = 0; i < 8; i++) {
+        if (float(i) >= min(depth, 6.0) + uDiveX) break;
+        vec2 g = w * sc;
+        vec2 id = floor(g);
+        float h = hash1(id);
+        float life = uTime * (0.15 + 0.35 * h) + h * 17.0; // each square runs at its own pace
+        float born = floor(life);
+        float age = life - born;
+        vec2 k = hash2(id + born * 7.13); // a new place and size every time one appears
+        vec2 c = (k - 0.5) * 0.4 + 0.012 * sin(uTime * (17.0 + 9.0 * k.yx) + h * 40.0); // it trembles on the spot
+        float rad = (0.10 + 0.15 * hash1(id * 1.7 + born)) * sqrt(sin(PI * age)) * (1.0 + 0.15 * uKick);
+        vec2 d = g - id - 0.5 - c;
+        float r = length(d);
+        if (r < rad) {
+          vec2 q = d / rad;
+          float m = dot(q, q);
+          p = rot2(q, h * 2.0 * PI) * (0.3 + 0.45 * m); // squeezed towards the edge, like a glass ball; turned its own way
+          fog = (0.8 + 1.1 * m * m) * smoothstep(1.0, 0.93, sqrt(m)); // brighter round the edge
+          break;
+        }
+        sc *= 2.0;
+      }
     }
   }
   return p;
@@ -571,7 +649,20 @@ function juliaBlob() {
   }
   return `<path d="${d}" fill="currentColor" stroke="none"/>`;
 }
+function voidNest(cx, cy, r, depth) {
+  let out = `<circle cx="${f1(cx)}" cy="${f1(cy)}" r="${f1(r)}"/>`;
+  if (depth > 1) for (const a of [0, 120, 240]) out += voidNest(cx + r * VOID_OUT * Math.cos(a * Math.PI / 180), cy - r * VOID_OUT * Math.sin(a * Math.PI / 180), r / VOID_STEP, depth - 1);
+  return out;
+}
+function foam() {
+  // bubbles of all sizes; the dotted ones are on their way in or out
+  const b = [[13, 14, 8.5], [28, 11, 5], [27.5, 27, 7, 1], [11.5, 30, 4], [20, 21, 2.2, 1], [34, 19, 2.5], [6, 22, 1.8, 1], [19, 6, 2], [18.5, 34, 1.6]];
+  return b.map(([x, y, r, faint]) => `<circle cx="${x}" cy="${y}" r="${r}"${faint ? ' stroke-dasharray="1.6 1.6"' : ''}/>`).join('');
+}
 const MODE_ART = {
+  void: '<circle cx="20" cy="20" r="7.5" fill="currentColor"/>' + rings(10.5, 14, 19, 26),
+  voidmax: voidNest(20, 20, 17, 3),
+  quantum: foam(),
   frames: '<rect x="6.5" y="6.5" width="27" height="27"/><rect x="11.5" y="11.5" width="17" height="17"/><rect x="15.5" y="15.5" width="9" height="9"/><rect x="18" y="18" width="4" height="4"/>',
   tri: '<polygon points="20,5 37,34.5 3,34.5"/>' + triangleHoles([20, 5], [37, 34.5], [3, 34.5], 3),
   carpet: carpetHoles(4, 4, 32, 2),
@@ -679,7 +770,7 @@ function dial({ min, max, home, neutral = false, step, name, label, read, write 
 
 const ZOOM_LO = Math.log2(0.3), ZOOM_HI = Math.log2(6); // zoom is spread evenly by doublings, so 1× sits well inside the track
 const sliders = {
-  seg: dial({ min: 2, max: 24, home: DEFAULTS.seg, step: 2, name: 'Mirrors', label: () => (P.mode === 'spiral' ? `Arms: ${Math.round(P.seg / 2)}` : P.mode === 'frames' ? `Frames: ${Math.round(P.seg / 2)}` : FRACTALS.includes(P.mode) ? `Depth: ${Math.round(P.seg / 2)}` : `Mirrors: ${Math.round(P.seg)}`), read: () => P.seg, write: (v) => { P.seg = Math.round(v / 2) * 2; } }),
+  seg: dial({ min: 2, max: 24, home: DEFAULTS.seg, step: 2, name: 'Mirrors', label: () => (P.mode === 'spiral' ? `Arms: ${Math.round(P.seg / 2)}` : P.mode === 'frames' ? `Frames: ${Math.round(P.seg / 2)}` : P.mode === 'void' ? `Size: ${Math.round(P.seg / 2)}` : FRACTALS.includes(P.mode) ? `Depth: ${Math.round(P.seg / 2)}` : `Mirrors: ${Math.round(P.seg)}`), read: () => P.seg, write: (v) => { P.seg = Math.round(v / 2) * 2; } }),
   spin: dial({ min: -1, max: 1, home: 0, neutral: true, name: 'Spin', label: () => 'Spin', read: () => P.spin, write: (v) => { P.spin = v; } }),
   twist: dial({ min: -1, max: 1, home: 0, neutral: true, name: 'Twist', label: () => 'Twist', read: () => P.twist, write: (v) => { P.twist = v; } }),
   zoom: dial({ min: ZOOM_LO, max: ZOOM_HI, home: 0, neutral: true, name: 'Zoom', label: () => `Zoom ${P.zoom.toFixed(1)}×`, read: () => Math.log2(P.zoom), write: (v) => { P.zoom = clamp(2 ** v, 0.3, 6); } }),
@@ -796,7 +887,7 @@ $('sat-cycle').addEventListener('click', () => {
 function randomize() {
   const r = Math.random;
   Object.assign(P, {
-    mode: ['wedge', 'wedge', 'hex', 'tunnel', 'circles', 'spiral', 'frames', 'tri', 'carpet', 'koch', 'bubbles', 'julia'][Math.floor(r() * 12)],
+    mode: ['wedge', 'wedge', 'hex', 'tunnel', 'circles', 'spiral', 'frames', 'tri', 'carpet', 'koch', 'bubbles', 'julia', 'void', 'voidmax', 'quantum'][Math.floor(r() * 15)],
     seg: 4 + Math.floor(r() * 9) * 2,
     spin: (r() - 0.5) * 0.8,
     twist: r() < 0.5 ? 0 : (r() - 0.5) * 0.8,
