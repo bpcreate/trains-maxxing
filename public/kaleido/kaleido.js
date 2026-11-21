@@ -17,7 +17,7 @@ canvas.height = 720;
 // left to right: plainest first, then mirrors, then the fractals
 const MODES = [['off', 'Plain camera'], ['wedge', 'Classic'], ['hex', 'Honeycomb'], ['tunnel', 'Tunnel'], ['circles', 'Circles'], ['spiral', 'Spiral'],
   ['frames', 'Frames'], ['tri', 'Triangles'], ['carpet', 'Carpet'], ['koch', 'Snowflake'], ['bubbles', 'Bubbles'], ['julia', 'Julia'],
-  ['void', 'Void'], ['voidmax', 'Void Maxxing'], ['quantum', 'Quantum Bubbles']];
+  ['void', 'Void'], ['voidmax', 'Void Maxxing'], ['quantum', 'Quantum Foam']];
 const FRACTALS = ['tri', 'carpet', 'koch', 'bubbles', 'julia', 'voidmax', 'quantum']; // the slider sets how deep these go
 const MODE_CODE = { off: 0, wedge: 1, hex: 3, tunnel: 4, circles: 5, spiral: 6, frames: 7, tri: 8, carpet: 9, koch: 10, bubbles: 11, julia: 12, void: 13, voidmax: 14, quantum: 15 }; // matches the shader
 const DEFAULTS = { mode: 'wedge', seg: 8, spin: 0.15, twist: 0, zoom: 1, offX: 0, offY: 0, hue: 0, hueSpin: 0, dive: 0, sat: 1.2, satSpin: 0, trails: 0, invert: false, beat: false }; // hueSpin, satSpin: 0 off, 1 slow, 2 fast
@@ -48,7 +48,7 @@ const DIVES = {
   void: () => ({ C: [0, 0], L: [Math.log(2), 0], view: 1 }),
   // the point that sits inside a void inside a void, for ever: falling towards it passes one rim after another
   voidmax: () => ({ C: [VOID_STEP * VOID_OUT / (VOID_STEP - 1), 0], L: [Math.log(VOID_STEP), 0], view: 0.9 / VOID_STEP ** 2, extra: 4 }),
-  // every size of bubble is the same foam drawn at half the size
+  // every size of blob is the same foam drawn at half the size
   quantum: () => ({ C: [0.37, 0.21], L: [Math.log(2), 0], view: 2, extra: 1 }),
 };
 let rot = 0;
@@ -256,33 +256,39 @@ vec2 warp(vec2 p, vec2 dz, float zmag, out float fog) {
       }
       p = q;
     } else {
-      // quantum bubbles: foam. Bubbles of every size pop into being, swell and vanish, never in the same place twice.
-      // Each one is a glass ball with the whole picture inside it; the picture itself is only just visible behind.
+      // quantum foam: blobs of every size drift about, swell and shrink, and run into each other like oil in water.
+      // Each blob adds to a strength that is 1 at its middle and 0 at its reach; the foam is wherever the total is
+      // high enough, so two blobs that come close join up before they touch. The picture is bent inside the foam,
+      // as through thick glass, and is only just visible behind it.
       vec2 w = dive ? uDiveC + cmul(p * uDiveV, dz) : p;
-      fog = 0.08;
-      float sc = 2.0; // the biggest bubbles sit in squares half the screen high; each layer after is half the size
-      for (int i = 0; i < 8; i++) {
-        if (float(i) >= min(depth, 6.0) + uDiveX) break;
+      float sc = 1.5 + 0.5 * min(depth, 8.0); // squares up the screen for the biggest blobs; each layer after is half the size
+      float total = 0.0;
+      vec2 slope = vec2(0.0); // which way the strength rises, in screen units
+      for (int i = 0; i < 3; i++) {
+        if (float(i) >= 2.0 + uDiveX) break;
         vec2 g = w * sc;
-        vec2 id = floor(g);
-        float h = hash1(id);
-        float life = uTime * (0.15 + 0.35 * h) + h * 17.0; // each square runs at its own pace
-        float born = floor(life);
-        float age = life - born;
-        vec2 k = hash2(id + born * 7.13); // a new place and size every time one appears
-        vec2 c = (k - 0.5) * 0.4 + 0.012 * sin(uTime * (17.0 + 9.0 * k.yx) + h * 40.0); // it trembles on the spot
-        float rad = (0.10 + 0.15 * hash1(id * 1.7 + born)) * sqrt(sin(PI * age)) * (1.0 + 0.15 * uKick);
-        vec2 d = g - id - 0.5 - c;
-        float r = length(d);
-        if (r < rad) {
-          vec2 q = d / rad;
-          float m = dot(q, q);
-          p = rot2(q, h * 2.0 * PI) * (0.3 + 0.45 * m); // squeezed towards the edge, like a glass ball; turned its own way
-          fog = (0.8 + 1.1 * m * m) * smoothstep(1.0, 0.93, sqrt(m)); // brighter round the edge
-          break;
+        vec2 id0 = floor(g);
+        for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+          vec2 id = id0 + vec2(float(x), float(y));
+          float h = hash1(id);
+          vec2 k = hash2(id);
+          // each blob wanders about its own square at its own pace, and swells and shrinks as it goes
+          vec2 c = 0.5 + 0.48 * vec2(sin(uTime * (0.25 + 0.6 * k.x) + h * 40.0), cos(uTime * (0.2 + 0.7 * k.y) + k.x * 40.0));
+          float reach = (0.5 + 0.5 * k.y) * (0.2 + 0.8 * abs(sin(uTime * (0.12 + 0.3 * h) + k.x * 20.0)));
+          reach = min(reach * (1.0 + 0.2 * uKick), 1.0);
+          vec2 d = g - id - c;
+          float m = 1.0 - dot(d, d) / (reach * reach);
+          if (m > 0.0) {
+            total += m * m * m;
+            slope += -6.0 * m * m * d / (reach * reach) * sc;
+          }
         }
         sc *= 2.0;
       }
+      float inside = total - 0.3;
+      // towards the edge of the foam the picture is pulled inwards more, and the edge itself catches the light
+      p = p * 0.8 + slope / (1.0 + length(slope)) * 0.22 * step(0.0, inside);
+      fog = inside > 0.0 ? (0.85 + 1.3 * exp(-inside / 0.1)) * smoothstep(0.0, 0.03, inside) : 0.08;
     }
   }
   return p;
@@ -655,9 +661,9 @@ function voidNest(cx, cy, r, depth) {
   return out;
 }
 function foam() {
-  // bubbles of all sizes; the dotted ones are on their way in or out
-  const b = [[13, 14, 8.5], [28, 11, 5], [27.5, 27, 7, 1], [11.5, 30, 4], [20, 21, 2.2, 1], [34, 19, 2.5], [6, 22, 1.8, 1], [19, 6, 2], [18.5, 34, 1.6]];
-  return b.map(([x, y, r, faint]) => `<circle cx="${x}" cy="${y}" r="${r}"${faint ? ' stroke-dasharray="1.6 1.6"' : ''}/>`).join('');
+  // blobs of all sizes running into each other
+  const b = [[14, 15, 8], [23, 19, 6], [28, 27, 7], [11, 28, 5], [17, 25, 3.5], [31, 12, 4], [33, 19, 2.5], [6, 20, 2], [21, 8, 2.5]];
+  return b.map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}"/>`).join('');
 }
 const MODE_ART = {
   void: '<circle cx="20" cy="20" r="7.5" fill="currentColor"/>' + rings(10.5, 14, 19, 26),
