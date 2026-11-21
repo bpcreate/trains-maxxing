@@ -3,6 +3,8 @@
 // it drives playback: normal speed uses the browser's own playback; reverse,
 // shunting and scratching are done by seeking every frame (smooth on proxies).
 
+import { FrameSource, canDecodeFrames } from './framesource.js';
+
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const STEP_FPS = 30;
 
@@ -53,7 +55,15 @@ export class LayerPlayer {
   /** The element to draw, or null. */
   get el() {
     if (this.liveEl) return this.liveEl;
-    return this.curKey ? this.cur : null;
+    if (!this.curKey) return null;
+    const fs = this._fs();
+    return fs ? fs.view : this.cur;
+  }
+
+  /** The frame-exact decoder for the clip showing now, once it has a picture. */
+  _fs() {
+    const fs = this.cur._fs;
+    return fs && fs.ready && !fs.failed ? fs : null;
   }
 
   get isLive() {
@@ -76,9 +86,14 @@ export class LayerPlayer {
     el.dataset.hdr = hdr && url.startsWith('/media/') ? '1' : '';
     el.src = url;
     el.load();
+    // prepared copies are decoded by the stage itself, frame by frame (see framesource.js)
+    if (el._fs) el._fs.close();
+    el._fs = canDecodeFrames && FrameSource.enabled && url.startsWith('/cache/') && url.includes('.mp4') ? new FrameSource(url) : null;
   }
 
   _unload(el) {
+    if (el._fs) el._fs.close();
+    el._fs = null;
     el.pause();
     el.removeAttribute('src');
     el.load();
@@ -114,7 +129,7 @@ export class LayerPlayer {
         this.nextKey = want;
         this.nextUrl = url;
         this._load(this.next, url, clip.hdr);
-      } else if (this.next.readyState >= 2) {
+      } else if (this.next.readyState >= 2 && this._primed(this.next, layer)) {
         // ready: swap it in
         const sameClip = this.curKey === want;
         const keep = sameClip ? this.pos : null; // same clip, better file: stay where we are
@@ -142,6 +157,17 @@ export class LayerPlayer {
         this.cur.currentTime = this.pos;
       }
     }
+  }
+
+  /** True once the spare element's decoder has its first picture (or is not in use). */
+  _primed(el, layer) {
+    const fs = el._fs;
+    if (!fs || fs.failed || fs.ready) return true;
+    if (performance.now() - fs.born > 1500) return true; // slow to start: begin on plain playback
+    const same = this.curKey === this.nextKey;
+    const t = same ? this.pos : layer.in * (el.duration || 0);
+    fs.want(Math.floor(t * fs.fps), 1);
+    return false;
   }
 
   /** Load a cued clip into the spare element so GO can start it instantly. */
@@ -190,6 +216,59 @@ export class LayerPlayer {
     if (Math.abs(v.currentTime - target) > 0.002) v.currentTime = target;
   }
 
+  _want(fs, dir, inT, outT, bounce, speed = 1) {
+    const f = fs.fps;
+    fs.view.currentTime = this.pos;
+    fs.want(Math.floor(this.pos * f + 1e-6), dir, Math.ceil(inT * f), Math.floor(outT * f) - 1, bounce, speed);
+  }
+
+  /**
+   * Playback on the stage's own clock, for clips the stage decodes itself:
+   * the playhead moves by exactly rate x dt and the matching frame is shown.
+   */
+  _tickFrames(fs, rate, dt, layer, ctx, inT, outT, audible) {
+    const v = this.cur;
+    const end = outT - 0.04;
+    const shunt = layer.mode === 'shunt';
+    if (rate > 0) {
+      this.pos += rate * dt;
+      if (this.pos < inT) this.pos = inT;
+      if (this.pos >= end) {
+        if (shunt) {
+          if (layer.shuntBeats <= 0) this.dir = -this.dir;
+          this.pos = end; // beat-synced: hold here until the beat turns us round
+        } else if (layer.mode === 'once') {
+          this.pos = end;
+        } else {
+          this.pos = inT + Math.min(this.pos - end, Math.max(0, end - inT));
+        }
+      }
+    } else if (rate < 0) {
+      this.pos += rate * dt;
+      if (this.pos <= inT) {
+        if (shunt) {
+          this.pos = inT;
+          if (layer.shuntBeats <= 0) this.dir = -this.dir;
+        } else if (layer.mode === 'once' && !ctx.rewind) {
+          this.pos = inT;
+        } else {
+          this.pos = end;
+        }
+      }
+      if (this.pos > outT) this.pos = end;
+    }
+    this._want(fs, Math.sign(rate), inT, outT, shunt && !ctx.rewind, Math.abs(rate));
+
+    // the <video> only supplies sound here, and only for plain forward play
+    if (audible && rate > 0 && Math.abs(rate - 1) < 0.26) {
+      if (Math.abs(v.playbackRate - rate) > 0.001) v.playbackRate = rate;
+      if (Math.abs(v.currentTime - this.pos) > 0.25 && !v.seeking) v.currentTime = this.pos;
+      if (v.paused && !v.seeking) v.play().catch(() => {});
+    } else if (!v.paused) {
+      v.pause();
+    }
+  }
+
   /**
    * Advance playback by dt seconds.
    * @param layer  layer state
@@ -207,6 +286,7 @@ export class LayerPlayer {
 
     const inT = layer.in * d;
     const outT = Math.max(inT + 0.05, layer.out * d);
+    const fs = this._fs();
 
     if (this.scrub) {
       const sc = this.scrub;
@@ -219,8 +299,11 @@ export class LayerPlayer {
         }
       }
       if (!v.paused) v.pause();
+      const moved = sc.pos * d - this.pos;
       this.pos = sc.pos * d;
-      this._seek(this.pos);
+      // decode ahead in whichever direction the finger is dragging
+      if (fs) this._want(fs, Math.abs(moved) > 1e-4 ? Math.sign(moved) : 0, 0, d, false, Math.abs(moved) / dt);
+      else this._seek(this.pos);
       return;
     }
 
@@ -230,6 +313,11 @@ export class LayerPlayer {
       rate *= this.dir;
     }
     if (ctx.rewind) rate = -2;
+
+    if (fs) {
+      this._tickFrames(fs, rate, dt, layer, ctx, inT, outT, !v.muted);
+      return;
+    }
 
     if (rate > 0) {
       // forwards: let the browser play

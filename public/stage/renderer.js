@@ -120,14 +120,20 @@ export class Renderer {
       L.src = null;
       return;
     }
-    if (video.readyState < 2 || !video.videoWidth) {
+    if (video.readyState < 2 || !video.videoWidth || (video.frame === null)) {
       // Mid-seek (reverse and scratching seek every frame) the video has no
       // frame to give for a moment: keep the last one instead of going black.
       if (L.src !== video) L.has = false;
       return;
     }
-    L.src = video;
     let src = video;
+    if (video.frame) {
+      // a clip the stage decodes itself: upload only when the picture changed
+      src = video.frame;
+      if (L.src === video && L.frame === src && !!wantMips === !!L.mips) return;
+      L.frame = src;
+    } else L.frame = null;
+    L.src = video;
     if (video.dataset && video.dataset.hdr) {
       // WebGL uploads of HDR (HLG/PQ) video skip Chrome's tone mapping and come
       // out flat and grey; a 2D canvas draw applies it, so go through one.

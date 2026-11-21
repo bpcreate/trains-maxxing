@@ -250,6 +250,7 @@ function reportPerf(t, s) {
     d.L[id] = {
       clip: (net.clipsById.get(ly.src) || {}).name, kind: !p.curUrl ? 'loading' : p.curUrl.startsWith('/cache/') ? 'prep' : 'orig',
       mode: ly.mode, rate: ly.rate, dir: p.dir, on: layerVisible(s, id), stepping: v.paused, scrub: !!p.scrub,
+      own: !!v.frame, // true: the stage decodes this clip itself, frame by frame
       vfps: same ? Math.round((q.totalVideoFrames - prev.n) / span) : null, // null: clip just changed
       moved: same ? +(v.currentTime - prev.t).toFixed(2) : null,
       drop: same ? q.droppedVideoFrames - prev.dr : null, rs: v.readyState,
