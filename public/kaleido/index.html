@@ -19,6 +19,10 @@
 
 <div id="status"><i></i><span id="status-text">Not connected to the mixer</span></div>
 <button id="menu-btn" type="button" aria-label="Show or hide the controls">☰</button>
+<button id="full-btn" type="button" aria-label="Full screen" aria-pressed="false" hidden>
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path class="grow" d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/><path class="shrink" d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/></svg>
+</button>
+<p id="full-tip" role="status" hidden>This browser cannot go full screen by itself. Tap Share, then <b>Add to Home Screen</b>, and open it from there.</p>
 
 <div id="start">
   <h1>Kaleidoscope</h1>
@@ -29,11 +33,33 @@
   <p id="start-error" role="alert"></p>
 </div>
 
+<div id="hue-rail" hidden>
+  <div class="rail">
+    <div class="rail-track" id="sat-track" role="slider" tabindex="0" aria-label="Colour strength" aria-orientation="vertical"><i class="rail-home"></i><i class="rail-thumb"></i></div>
+    <button class="rail-btn" id="sat-cycle" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M7 8l5-5 5 5M7 16l5 5 5-5"/></svg>
+    </button>
+  </div>
+  <div class="rail">
+    <div class="rail-track" id="hue-track" role="slider" tabindex="0" aria-label="Colour shift" aria-orientation="vertical"><i class="rail-home"></i><i class="rail-thumb"></i></div>
+    <button class="rail-btn" id="hue-cycle" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 0 1 12.8-5.3M19.5 12a7.5 7.5 0 0 1-12.8 5.3"/><path d="M17.6 2.8v4.2h-4.2M6.4 21.2V17h4.2"/></svg>
+    </button>
+  </div>
+</div>
+
+<button id="cam-btn" type="button" data-state="off" hidden>
+  <svg class="ic-back" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5a2 2 0 0 1 2-2h2.2l1.4-2h6.8l1.4 2H19a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.6" r="3.6"/></svg>
+  <svg class="ic-front" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.2" r="4"/><path d="M4 20.5c.6-4.4 3.8-6.6 8-6.6s7.4 2.2 8 6.6"/></svg>
+  <span id="cam-label">Camera</span>
+</button>
+
 <div id="controls" hidden>
-  <div class="chips" id="modes"></div>
+  <div class="modes" id="modes"></div>
   <div class="sliders" id="sliders"></div>
   <div class="chips" id="buttons"></div>
 </div>
+<div id="toast" role="status"></div>
 <input id="file" type="file" accept="image/*,video/*" hidden>
 <script type="module" src="kaleido.js"></script>
 </body>
