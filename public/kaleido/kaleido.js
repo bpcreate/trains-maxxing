@@ -49,7 +49,7 @@ const DIVES = {
   // the point that sits inside a void inside a void, for ever: falling towards it passes one rim after another
   voidmax: () => ({ C: [VOID_STEP * VOID_OUT / (VOID_STEP - 1), 0], L: [Math.log(VOID_STEP), 0], view: 0.9 / VOID_STEP ** 2, extra: 4 }),
   // every size of blob is the same foam drawn at half the size
-  quantum: () => ({ C: [0.37, 0.21], L: [Math.log(2), 0], view: 2, extra: 1 }),
+  quantum: () => ({ C: [3.7, 2.1], L: [Math.log(2), 0], view: 2 }),
 };
 let rot = 0;
 let divePhase = 0; // how far through one loop of the endless dive, 0..1
@@ -256,54 +256,92 @@ vec2 warp(vec2 p, vec2 dz, float zmag, out float fog) {
       }
       p = q;
     } else {
-      // quantum foam: blobs of every size drift about, swell and shrink, and run into each other like oil in water.
-      // Each blob adds to a strength that is 1 at its middle and 0 at its reach; the foam is wherever the total is
-      // high enough, so two blobs that come close join up before they touch. The picture is bent inside the foam,
-      // as through thick glass, and is only just visible behind it.
-      vec2 w = dive ? uDiveC + cmul(p * uDiveV, dz) : p;
-      float sc = 1.5 + 0.5 * min(depth, 8.0); // squares up the screen for the biggest blobs; each layer after is half the size
-      float total = 0.0;
-      vec2 slope = vec2(0.0); // which way the strength rises, in screen units
-      for (int i = 0; i < 3; i++) {
-        if (float(i) >= 2.0 + uDiveX) break;
-        vec2 g = w * sc;
-        vec2 id0 = floor(g);
-        for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
-          vec2 id = id0 + vec2(float(x), float(y));
-          float h = hash1(id);
-          vec2 k = hash2(id);
-          // each blob wanders about its own square at its own pace, and swells and shrinks as it goes
-          vec2 c = 0.5 + 0.48 * vec2(sin(uTime * (0.25 + 0.6 * k.x) + h * 40.0), cos(uTime * (0.2 + 0.7 * k.y) + k.x * 40.0));
-          float reach = (0.5 + 0.5 * k.y) * (0.2 + 0.8 * abs(sin(uTime * (0.12 + 0.3 * h) + k.x * 20.0)));
-          reach = min(reach * (1.0 + 0.2 * uKick), 1.0);
-          vec2 d = g - id - c;
-          float m = 1.0 - dot(d, d) / (reach * reach);
-          if (m > 0.0) {
-            total += m * m * m;
-            slope += -6.0 * m * m * d / (reach * reach) * sc;
-          }
-        }
-        sc *= 2.0;
-      }
-      float inside = total - 0.3;
-      // towards the edge of the foam the picture is pulled inwards more, and the edge itself catches the light
-      p = p * 0.8 + slope / (1.0 + length(slope)) * 0.22 * step(0.0, inside);
-      fog = inside > 0.0 ? (0.85 + 1.3 * exp(-inside / 0.1)) * smoothstep(0.0, 0.03, inside) : 0.08;
+      // quantum foam is drawn in layers by foam() below, not by bending one picture
     }
   }
   return p;
+}
+// colour of the source picture at a point
+vec3 src(vec2 p) {
+  // fit the source to cover the frame, then move the sampling point
+  vec2 uv = p / vec2(uSrcAsp, 1.0) / max(uAsp / uSrcAsp, 1.0) + 0.5 + uOff;
+  uv = 1.0 - abs(mod(uv, 2.0) - 1.0); // mirrored repeat: no hard edges
+  if (uFlipX > 0.5) uv.x = 1.0 - uv.x;
+  return texture2D(uSrc, uv).rgb;
+}
+// Quantum foam: blobs of every size drift about, swell and shrink, and run into each other like oil in water.
+// Each blob adds to a strength that is 1 at its middle and 0 at its reach; the foam is wherever the total is high
+// enough, so two blobs that come close join up before they touch. g is the point, measured in squares of the foam.
+void blobs(vec2 g, out float total, out vec2 slope) {
+  total = 0.0;
+  slope = vec2(0.0); // which way the strength rises
+  vec2 id0 = floor(g);
+  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec2 id = id0 + vec2(float(x), float(y));
+    float h = hash1(id);
+    vec2 k = hash2(id);
+    // each blob wanders about its own square at its own pace, and swells and shrinks as it goes
+    vec2 c = 0.5 + 0.48 * vec2(sin(uTime * (0.25 + 0.6 * k.x) + h * 40.0), cos(uTime * (0.2 + 0.7 * k.y) + k.x * 40.0));
+    float reach = (0.5 + 0.5 * k.y) * (0.2 + 0.8 * abs(sin(uTime * (0.12 + 0.3 * h) + k.x * 20.0)));
+    reach = min(reach * (1.0 + 0.2 * uKick), 1.0);
+    vec2 d = g - id - c;
+    float m = 1.0 - dot(d, d) / (reach * reach);
+    if (m > 0.0) {
+      total += m * m * m;
+      slope += -6.0 * m * m * d / (reach * reach);
+    }
+  }
+}
+// The foam is several sheets at different distances, seen through a lens focused on one of them. The sheet in focus
+// is crisp, with bright edges; nearer sheets are bigger, soft and see-through, further ones smaller, soft and dim.
+// Every sheet is the same foam at half the size of the one in front, and how soft it is depends only on its size on
+// screen, so diving brings each sheet through focus and out past the lens, and after one step it all looks the same.
+vec3 foam(vec2 p, vec2 dz) {
+  bool dive = uDiveOn > 0.5;
+  float depth = clamp(uSeg * 0.5, 1.0, 8.0);
+  float sc = 1.5 + 0.5 * depth;               // squares up the screen for the sheet nearest the lens
+  float mag = dive ? uDiveV * length(dz) : 1.0; // how much of the foam fits on screen
+  vec2 w = vec2(3.7, 2.1) + (dive ? cmul(p * uDiveV, dz) : p);
+  vec3 col = src(p) * 0.08; // the picture itself, only just visible behind
+  float top = dive ? 4.0 : 3.0;
+  for (int j = 0; j < 6; j++) {
+    float i = top - float(j); // furthest sheet first
+    if (i < (dive ? -1.0 : 0.0)) break;
+    float cells = sc * exp2(i);
+    float z = log2(cells * mag / (sc * 2.0)); // 0 in focus, below 0 nearer, above 0 further
+    float show = smoothstep(-1.6, -0.9, z) * (1.0 - smoothstep(2.0, 2.7, z));
+    if (show <= 0.0) continue;
+    float blur = min(abs(z), 1.6);
+    float total;
+    vec2 slope;
+    blobs(w * cells + uTime * vec2(0.05, 0.02), total, slope); // all sheets drift; the near ones cross the screen faster
+    slope *= cells * mag;
+    float inside = total - 0.3;
+    float soft = 0.015 + 0.16 * blur;
+    float a = smoothstep(-soft, soft, inside) * show * mix(1.0, 0.5, clamp(-z, 0.0, 1.0));
+    if (a <= 0.0) continue;
+    // the picture is bent inside the foam, as through thick glass; out of focus it is smeared as well
+    vec2 q = p * 0.8 + slope / (1.0 + length(slope)) * 0.22;
+    vec3 c = src(q);
+    if (blur > 0.15) {
+      float r = 0.014 * blur;
+      c = (c + src(q + vec2(r, r)) + src(q + vec2(-r, r)) + src(q + vec2(r, -r)) + src(q - vec2(r, r))) * 0.2;
+    }
+    float edge = 1.3 * exp(-max(inside, 0.0) / 0.1) * clamp(1.0 - blur, 0.0, 1.0); // a sheet in focus catches the light at its edge
+    c *= (0.85 + edge) * mix(1.0, 0.45, clamp(z / 2.5, 0.0, 1.0));
+    col = mix(col, c, a);
+  }
+  return col;
 }
 // colour of the source seen from a point of the screen; alpha carries the fade to dark
 vec4 look(vec2 p, float t) {
   float fog;
   t += uDiveT0;
   float ang = -t * uDiveL.y;
-  p = warp(p, exp(-t * uDiveL.x) * vec2(cos(ang), sin(ang)), exp(t * uDiveL.x), fog);
-  // fit the source to cover the frame, then move the sampling point
-  vec2 uv = p / vec2(uSrcAsp, 1.0) / max(uAsp / uSrcAsp, 1.0) + 0.5 + uOff;
-  uv = 1.0 - abs(mod(uv, 2.0) - 1.0); // mirrored repeat: no hard edges
-  if (uFlipX > 0.5) uv.x = 1.0 - uv.x;
-  return vec4(texture2D(uSrc, uv).rgb, fog);
+  vec2 dz = exp(-t * uDiveL.x) * vec2(cos(ang), sin(ang));
+  if (uMode > 14.5) return vec4(foam(rot2(p, uRot + uTwist * length(p) * 4.0), dz), 1.0);
+  p = warp(p, dz, exp(t * uDiveL.x), fog);
+  return vec4(src(p), fog);
 }
 void main() {
   vec2 p = (vUv - 0.5) * vec2(uAsp, 1.0);
