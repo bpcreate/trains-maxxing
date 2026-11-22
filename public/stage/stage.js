@@ -56,7 +56,8 @@ function updatePanel() {
   panel.classList.toggle('hidden', !(panelWanted ?? auto));
   const n = net.peers.remotes;
   $('status').textContent = !net.connected ? 'Connecting…'
-    : `${net.clips.length} clips · ${n} phone${n === 1 ? '' : 's'} connected` + (net.lives.length ? ` · ${net.lives.length} live input${net.lives.length === 1 ? '' : 's'}` : '');
+    : `${net.clips.length} clips · ${n} phone${n === 1 ? '' : 's'} connected` + (net.lives.length ? ` · ${net.lives.length} live input${net.lives.length === 1 ? '' : 's'}` : '')
+      + (net.peers.stages > 1 ? ` · ${net.peers.stages} screens (this one ${!net.peers.lead || net.peers.lead === net.you ? 'leads' : 'follows'})` : '');
 }
 function refreshQr() {
   $('qr-remote').src = `${net.base}/api/qr/remote.svg?k=${encodeURIComponent(net.key)}&${Date.now()}`;
@@ -106,6 +107,20 @@ addEventListener('resize', () => {
   spray.resize();
 });
 
+// ---- more than one big screen ----
+// The screen that has been open longest leads. It alone reports to the phones,
+// listens for the beat and plays clip sound; the others follow its playheads.
+const isLead = () => !net.peers.lead || net.peers.lead === net.you;
+let leadSync = null; // { at (server ms), L: { A: { k, q, p, v, d, s }, ... } }
+net.on('sync', (m) => { if (m && m.L && Number.isFinite(m.at)) leadSync = m; });
+function followFor(id, lead) {
+  if (lead || !leadSync) return null;
+  const tg = leadSync.L[id];
+  const age = (net.now() - leadSync.at) / 1000;
+  if (!tg || !Number.isFinite(tg.p) || !Number.isFinite(tg.v) || !(age > -0.5 && age < 1.5)) return null;
+  return { tg, age: Math.max(0, age) };
+}
+
 // ---- messages straight from phones ----
 
 net.on('jog', (m) => players[m.l]?.jog(m));
@@ -118,9 +133,12 @@ function showTag({ text, color }) {
   tagEl.textContent = text;
   tagEl.style.color = color;
   tagEl.style.fontSize = `${Math.max(5, Math.min(16, 110 / Math.max(6, text.length)))}vw`;
-  tagEl.style.setProperty('--rot', `${(Math.random() * 14 - 7).toFixed(1)}deg`);
-  tagEl.style.left = `${40 + Math.random() * 20}%`;
-  tagEl.style.top = `${40 + Math.random() * 20}%`;
+  // placed from the shout-out's number, so every screen puts it in the same spot
+  const n = net.state.tag.n || 0;
+  const rnd = (k) => { const x = Math.sin(n * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); };
+  tagEl.style.setProperty('--rot', `${(rnd(1) * 14 - 7).toFixed(1)}deg`);
+  tagEl.style.left = `${40 + rnd(2) * 20}%`;
+  tagEl.style.top = `${40 + rnd(3) * 20}%`;
   tagEl.classList.remove('show');
   void tagEl.offsetWidth; // restart the animation
   tagEl.classList.add('show');
@@ -134,7 +152,7 @@ net.on('state', (a) => {
 const beat = new BeatListener(({ bpm, t0 }) => net.act({ type: 'tempo', bpm, t0: t0 + net.offset }));
 let micBusy = false;
 async function syncMic() {
-  const want = net.state.tempo.mic;
+  const want = net.state.tempo.mic && isLead();
   if (want && !beat.active && !micBusy) {
     micBusy = true;
     const ok = await beat.start();
@@ -163,6 +181,7 @@ const tctx = thumbCanvas.getContext('2d');
 
 let last = performance.now();
 let lastPos = 0;
+let lastSync = 0;
 let lastPreview = 0;
 let lastThumb = 0;
 const t0 = performance.now();
@@ -274,6 +293,7 @@ function frame(t) {
   const s = net.state;
   const beatNow = beatAt(s.tempo, net.now());
 
+  const lead = isLead();
   let upMs = 0;
   LAYERS.forEach((id, i) => {
     const p = players[id];
@@ -286,12 +306,12 @@ function frame(t) {
     if (!p.el) renderer.setLayer(i, null);
     else if (!s.mom.freeze && layerVisible(s, id)) renderer.setLayer(i, p.el, renderer.fitFor(i, ly.fit) === 'fit');
     upMs += performance.now() - u0;
-    p.tick(dt, ly, { beat: beatNow, rewind: s.mom.rewind, audible: audible(s, id) });
+    p.tick(dt, ly, { beat: beatNow, rewind: s.mom.rewind, audible: lead ? audible(s, id) : 0, follow: followFor(id, lead) });
   });
   perf.up = Math.max(perf.up, upMs);
 
   const r0 = performance.now();
-  renderer.render(s, { time: (t - t0) / 1000, beat: beatNow, dt });
+  renderer.render(s, { time: (net.now() % 3600000) / 1000, beat: beatNow, dt }); // server time: effects move alike on every screen
   perf.rend = Math.max(perf.rend, performance.now() - r0);
   spray.tick(dt);
   if (!$('stats').hidden) {
@@ -302,11 +322,21 @@ function frame(t) {
   $('spray').style.opacity = s.blackout ? 0 : 1;
   tagEl.style.visibility = s.blackout ? 'hidden' : 'visible';
   beat.tick();
-  if (s.tempo.mic !== beat.active) syncMic();
+  if ((s.tempo.mic && lead) !== beat.active) syncMic();
 
   if (!net.connected) return;
   perf.work = Math.max(perf.work, performance.now() - workStart);
   if (t - perf.last >= 1000) reportPerf(t, s);
+  if (!lead) return; // a following screen leaves the reporting to the leader
+  if (net.peers.stages > 1 && t - lastSync > 150) {
+    lastSync = t;
+    const L = {};
+    for (const id of LAYERS) {
+      const pl = players[id];
+      if (pl.curKey && !pl.isLive) L[id] = { k: pl.curKey, q: pl.seq, p: Math.round(pl.pos * 1000) / 1000, v: pl.vel, d: pl.dir, s: !!pl.scrub };
+    }
+    net.send({ t: 'sync', at: net.now(), L });
+  }
   if (t - lastPos > 200) {
     lastPos = t;
     const p = {};
@@ -338,7 +368,7 @@ requestAnimationFrame(frame);
 
 // hooks for the end-to-end test
 window.__stage = {
-  net, renderer, players, lives, spray,
+  net, renderer, players, lives, spray, isLead,
   sample(x, y) {
     renderer.render(net.state, { time: (performance.now() - t0) / 1000, beat: beatAt(net.state.tempo, net.now()), dt: 0.016 });
     return renderer.readPixel(x, y);

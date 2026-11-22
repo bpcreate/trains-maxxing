@@ -112,8 +112,17 @@ export class Hub {
     return n;
   }
 
+  /**
+   * With more than one big screen open, the one that has been connected longest
+   * leads: it reports to the phones and the others follow its playheads.
+   */
+  leadStage() {
+    for (const c of this.clients.values()) if (c.role === 'stage') return c.id; // a Map keeps connection order
+    return null;
+  }
+
   _peers() {
-    this.broadcast({ t: 'peers', stages: this.count('stage'), remotes: this.count('remote'), lives: this.lives.list() });
+    this.broadcast({ t: 'peers', stages: this.count('stage'), remotes: this.count('remote'), lives: this.lives.list(), lead: this.leadStage() });
   }
 
   async connect(ws, role) {
@@ -222,8 +231,19 @@ export class Hub {
       case 'pos':
       case 'preview':
       case 'live.thumb': {
-        if (role !== 'stage') return;
+        // only the leading screen reports, or the phone would flicker between two answers
+        if (role !== 'stage' || client.id !== this.leadStage()) return;
         this.broadcast(msg, 'remote');
+        return;
+      }
+      case 'sync': {
+        // the leading screen's playheads, for any other screens to follow
+        if (role !== 'stage' || client.id !== this.leadStage()) return;
+        this.broadcast({ t: 'sync', at: msg.at, L: msg.L }, 'stage', client.id);
+        return;
+      }
+      case 'ping': {
+        this.send(client, { t: 'pong', c: msg.c, s: Date.now() });
         return;
       }
       case 'perf': {

@@ -23,6 +23,8 @@ export class Net {
     this.connected = false;
     this.everConnected = false;
     this.offset = 0; // server clock minus local clock
+    this._rtt = Infinity; // round trip of the measurement the offset came from
+    setInterval(() => this._ping(), 5000);
     this.handlers = {};
     this._pending = new Map(); // path -> value waiting to be sent
     this._timer = null;
@@ -44,6 +46,12 @@ export class Net {
   /** Server time in ms (beat clock reference). */
   now() {
     return Date.now() + this.offset;
+  }
+
+  /** Measure the server clock; the quickest round trip gives the best answer. */
+  _ping() {
+    this._rtt *= 1.2; // let an old measurement be replaced as clocks drift
+    this.send({ t: 'ping', c: performance.now() });
   }
 
   _open() {
@@ -82,6 +90,8 @@ export class Net {
         this.you = m.you;
         this.state = m.state;
         this.offset = m.now - Date.now();
+        this._rtt = Infinity;
+        for (const ms of [0, 300, 900, 2000]) setTimeout(() => this._ping(), ms);
         this.info = m.info || {};
         this.cache = m.cache || 0;
         this.canPrep = m.canPrep !== false;
@@ -101,6 +111,14 @@ export class Net {
         this.cache = m.cache || 0;
         this.emit('clips');
         break;
+      case 'pong': {
+        const rtt = performance.now() - m.c;
+        if (rtt >= 0 && rtt <= this._rtt) {
+          this._rtt = rtt;
+          this.offset = m.s + rtt / 2 - Date.now();
+        }
+        break;
+      }
       case 'peers':
         this.peers = m;
         this.lives = m.lives || [];

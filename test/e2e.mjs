@@ -609,6 +609,49 @@ try {
     await pad.close();
   });
 
+  await check('a second screen joins late and follows the playhead of the first', async () => {
+    await reset('Mix');
+    await loadAndWait('A', 'pattern', { proxy: true });
+    await stage.waitForTimeout(2500); // let the first screen get well into the clip
+    const stage2 = await browser.newPage({ viewport: { width: 320, height: 180 } });
+    watch(stage2, 'stage2');
+    try {
+      await stage2.goto(`${BASE}/stage/`);
+      await until(() => stage2.evaluate(() => window.__stage?.net.connected && window.__stage.net.peers.stages === 2), 'second screen connected');
+      assert(await stage.evaluate(() => window.__stage.isLead()), 'the first screen should lead');
+      assert(!(await stage2.evaluate(() => window.__stage.isLead())), 'the second screen should follow');
+      const read = (pg) => pg.evaluate(() => {
+        const p = window.__stage.players.A;
+        return { pos: p.pos, dur: p.duration, key: p.curKey };
+      });
+      // software rendering runs at a few frames a second, so "in step" is judged loosely here
+      const apart = async () => {
+        const [a, b] = await Promise.all([read(stage), read(stage2)]);
+        if (!b.key || b.key !== a.key || !b.dur) return null;
+        const e = Math.abs(a.pos - b.pos);
+        return Math.min(e, a.dur - e);
+      };
+      await until(async () => {
+        const e = await apart();
+        return e != null && e < 0.6;
+      }, 'second screen in step with the first', 30000);
+      // and it stays there
+      await stage.waitForTimeout(2000);
+      const e = await apart();
+      assert(e != null && e < 0.8, `screens drifted ${e}s apart`);
+      // scratching reaches both
+      await act({ type: 'set', path: 'layers.A.playing', value: false });
+      await until(async () => (await apart()) < 0.2, 'both screens paused on the same spot', 15000);
+      await act({ type: 'set', path: 'layers.A.playing', value: true });
+      // the phone still gets one steady report
+      const lead = await remote.evaluate(() => window.__remote.net.peers.lead);
+      assert(lead === (await stage.evaluate(() => window.__stage.net.you)), 'phone should know which screen leads');
+    } finally {
+      await stage2.close();
+    }
+    await until(() => stage.evaluate(() => window.__stage.net.peers.stages === 1 && window.__stage.isLead()), 'first screen alone again');
+  });
+
   await check('controls need the session token from other devices', async () => {
     const ip = Object.values(os.networkInterfaces()).flat().find((n) => n.family === 'IPv4' && !n.internal)?.address;
     if (!ip) {

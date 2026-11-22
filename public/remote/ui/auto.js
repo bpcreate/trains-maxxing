@@ -35,9 +35,11 @@ export function autoView(app) {
   const kaleidoQr = h('img', { class: 'qr', alt: 'QR code for the kaleidoscope page' });
   const kaleidoUrl = h('code', { class: 'url' });
   const liveList = h('p', { class: 'note' });
+  const screenUrl = h('code', { class: 'url' });
   fetch(`${net.base}/api/info?k=${encodeURIComponent(net.key)}`).then((r) => r.json()).then((info) => {
     kaleidoQr.src = `${net.base}/api/qr/kaleido.svg?k=${encodeURIComponent(net.key)}`;
     kaleidoUrl.textContent = info.urls.kaleido;
+    screenUrl.textContent = info.urls.screen || '';
   }).catch(() => {});
 
   const el = h('div', { class: 'view', id: 'v-auto' },
@@ -56,7 +58,11 @@ export function autoView(app) {
     h('section', { class: 'panel live-info' },
       h('p', { class: 'note' }, 'Open this on the iPad for the kaleidoscope (or on any phone to use its camera). The first time, Safari shows a "not private" warning: tap Show Details, then Visit Website.'),
       h('div', { class: 'row' }, kaleidoQr, kaleidoUrl),
-      liveList));
+      liveList),
+    h('h2', {}, 'Second screen'),
+    h('section', { class: 'panel' },
+      h('p', { class: 'note' }, 'Got another laptop and projector? Open this address in Chrome on it (same Wi-Fi). It shows the same picture and keeps in step with the first screen.'),
+      h('div', { class: 'row' }, screenUrl)));
 
   function update() {
     const s = net.state;

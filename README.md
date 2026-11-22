@@ -59,6 +59,12 @@ In the mixer it appears under **Live** on the Clips tab. Send it to a deck or ov
 
 Any phone can open the same link and use *Plain camera* to act as a roving camera.
 
+## A second screen
+
+A second laptop on its own projector can show the same picture. Start the app on the first laptop as usual, then on the second laptop open the *Second screen* address in Chrome (it is printed when the app starts, and shown at the bottom of the phone's Auto tab). Press **F** for fullscreen.
+
+The screen that was opened first leads and the other follows its playheads, so the trains stay in step to within a frame or two. If the leading screen is closed, the other takes over. Clip sound and beat listening only happen on the leading screen. The second laptop fetches the videos from the first over Wi-Fi, so prepare your clips beforehand.
+
 ## If something is off
 
 - **Phone says it cannot connect:** phone and laptop must be on the same network. Some venue and guest Wi-Fi networks block devices from talking to each other; use the phone's hotspot instead.

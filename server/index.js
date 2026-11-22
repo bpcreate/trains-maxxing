@@ -89,11 +89,12 @@ function iceServers() {
 
 function urls() {
   if (PUBLIC_URL) {
-    return { stage: `${PUBLIC_URL}/stage/?k=${TOKEN}`, remote: `${PUBLIC_URL}/remote/?k=${TOKEN}`, kaleido: `${PUBLIC_URL}/kaleido/?k=${TOKEN}` };
+    return { stage: `${PUBLIC_URL}/stage/?k=${TOKEN}`, screen: `${PUBLIC_URL}/stage/?k=${TOKEN}`, remote: `${PUBLIC_URL}/remote/?k=${TOKEN}`, kaleido: `${PUBLIC_URL}/kaleido/?k=${TOKEN}` };
   }
   const ip = lanIps()[0] || 'localhost';
   return {
     stage: `http://localhost:${PORT}/stage/`,
+    screen: `http://${ip}:${PORT}/stage/?k=${TOKEN}`, // a second laptop on its own projector
     remote: `http://${ip}:${PORT}/remote/?k=${TOKEN}`,
     kaleido: `https://${ip}:${HTTPS_PORT}/kaleido/?k=${TOKEN}`,
   };
@@ -137,7 +138,7 @@ app.get('/', (req, res) => {
 app.get('/api/qr/:kind.svg', async (req, res) => {
   if (!isLoopback(req) && !tokenOk(req.query.k)) return res.status(403).end();
   const u = urls()[req.params.kind];
-  if (!u || req.params.kind === 'stage') return res.status(404).end();
+  if (!u || req.params.kind === 'stage' || req.params.kind === 'screen') return res.status(404).end();
   const svg = await QRCode.toString(u, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' });
   res.type('image/svg+xml').set('Cache-Control', 'no-store').send(svg);
 });
@@ -199,6 +200,7 @@ async function main() {
   if (PUBLIC_URL) console.log(`  On the internet at ${PUBLIC_URL}: these links carry the access code, so share them only with people you trust.\n`);
   console.log(`  Big screen${PUBLIC_URL ? '' : ' (open on this laptop)'}:  ${u.stage}`);
   console.log(`  Phone remote:                      ${u.remote}`);
+  if (!PUBLIC_URL) console.log(`  Second screen (another laptop):    ${u.screen}`);
   if (httpsOk || PUBLIC_URL) console.log(`  iPad kaleidoscope:                 ${u.kaleido}`);
   console.log(`\n  Videos folder: ${MEDIA_DIR}  (${media.list().length} clips)`);
   if (!media.ffmpeg) console.log('  ! ffmpeg was not found: no thumbnails, and no smooth scrubbing/reverse.');

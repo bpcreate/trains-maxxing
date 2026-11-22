@@ -4,6 +4,7 @@
 // shunting and scratching are done by seeking every frame (smooth on proxies).
 
 import { FrameSource, canDecodeFrames } from './framesource.js';
+import { JUMP, leadPos, gap, trimFor } from './follow.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const STEP_FPS = 30;
@@ -32,6 +33,8 @@ export class LayerPlayer {
     this.liveEl = null;        // <video> of a live input, when the source is live
     this.pos = 0;              // seconds
     this.dir = 1;              // shunt direction
+    this.vel = 0;              // clip seconds per second right now (told to following screens)
+    this.trim = 1;             // speed correction while following another screen
     this.seq = null;
     this.scrub = null;         // { pos (0..1), vel, coast }
     this.audioOk = false;
@@ -272,9 +275,11 @@ export class LayerPlayer {
   /**
    * Advance playback by dt seconds.
    * @param layer  layer state
-   * @param ctx    { beat, rewind, audible (0..1) }
+   * @param ctx    { beat, rewind, audible (0..1), follow?: { tg, age } from the leading screen }
    */
   tick(dt, layer, ctx) {
+    this.vel = 0;
+    this.trim = 1;
     if (this.isLive || !this.curKey) return;
     const v = this.cur;
     const d = this.duration;
@@ -313,6 +318,31 @@ export class LayerPlayer {
       rate *= this.dir;
     }
     if (ctx.rewind) rate = -2;
+    this.vel = rate;
+
+    // a second screen: close the gap to the leading screen's playhead
+    const fo = ctx.follow;
+    if (fo && fo.tg.k === this.curKey && fo.tg.q === layer.seq && !fo.tg.s) {
+      const end = outT - 0.04;
+      const loop = layer.mode === 'loop' || ctx.rewind;
+      if (layer.mode === 'shunt' && layer.shuntBeats <= 0 && !ctx.rewind && fo.tg.d !== this.dir) {
+        this.dir = fo.tg.d;
+        rate = -rate;
+        this.vel = rate;
+      }
+      const want = leadPos(fo.tg, fo.age, inT, end, loop);
+      const e = gap(want, this.pos, inT, end, loop);
+      if (fs || rate < 0) {
+        // this screen moves the playhead itself
+        this.pos = Math.abs(e) > JUMP ? want : this.pos + e * Math.min(1, dt * 3);
+      } else if (Math.abs(e) > JUMP) {
+        if (!v.seeking) v.currentTime = want;
+      } else if (rate > 0) {
+        this.trim = trimFor(e);
+      } else if (Math.abs(e) > 0.05 && !v.seeking) {
+        v.currentTime = want;
+      }
+    }
 
     if (fs) {
       this._tickFrames(fs, rate, dt, layer, ctx, inT, outT, !v.muted);
@@ -321,7 +351,8 @@ export class LayerPlayer {
 
     if (rate > 0) {
       // forwards: let the browser play
-      if (Math.abs(v.playbackRate - rate) > 0.001) v.playbackRate = clamp(rate, 0.0625, 4);
+      const speed = clamp(rate * this.trim, 0.0625, 4);
+      if (Math.abs(v.playbackRate - speed) > 0.001) v.playbackRate = speed;
       if (v.currentTime < inT - 0.05) v.currentTime = inT;
       if (v.currentTime >= outT - 0.04 || v.ended) {
         if (layer.mode === 'shunt') {
